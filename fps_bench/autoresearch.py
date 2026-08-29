@@ -138,16 +138,28 @@ class Best:
             return False
 
 
-async def run_experiment(pool: Any, *, exp_id: str, diff: str, episodes: int, ref: str, note: str) -> dict[str, Any]:
+async def prepare_sandbox(sb: Any, *, runtime: str, ref: str) -> str:
+    """Make sure cua-driver source + toolchain are present and built once on this sandbox."""
+    if runtime == "gvisor":
+        return await fleet.wait_prebuild(sb)  # image/Dockerfile prebuild at boot
+    return await fleet.ensure_bootstrapped(sb, ref)  # VM path: install + clone + build in-guest
+
+
+async def run_experiment(
+    pool: Any, *, exp_id: str, diff: str, episodes: int, ref: str, note: str,
+    runtime: str = "vm", sb: Any = None,
+) -> dict[str, Any]:
+    """Run one experiment. If ``sb`` is given it is reused (and not released here)."""
     row: dict[str, Any] = {"id": exp_id, "ref": ref, "note": note, "diff": diff, "ok": False, "score": -1.0, "time": time.time()}
     t0 = time.monotonic()
-    sb = None
+    own_sandbox = sb is None
     try:
-        sb = await fleet.claim(pool, exp_id)
+        if own_sandbox:
+            sb = await fleet.claim(pool, exp_id)
         row["claim"] = sb.to_dict()
         (RESULTS / "runs").mkdir(parents=True, exist_ok=True)
         (RESULTS / "runs" / f"{exp_id}.sandbox.json").write_text(json.dumps(sb.to_dict()))
-        await fleet.wait_prebuild(sb)
+        await prepare_sandbox(sb, runtime=runtime, ref=ref)
         ok, log = await fleet.apply_and_build(sb, diff, name=exp_id)
         row["log_tail"] = log[-1500:]
         if not ok:
@@ -163,25 +175,37 @@ async def run_experiment(pool: Any, *, exp_id: str, diff: str, episodes: int, re
         return row
     finally:
         row["seconds"] = time.monotonic() - t0
-        if sb is not None:
+        if own_sandbox and sb is not None:
             await fleet.release(sb)
         record(row)
         print(f"[{exp_id}] score={row['score']} ok={row['ok']} {row.get('note','')} ({row['seconds']:.0f}s)", flush=True)
 
 
-async def worker(idx: int, pool: Any, client: Any, best: Best, *, iterations: int, episodes: int, ref: str, run_id: str) -> None:
-    for i in range(iterations):
-        exp_id = f"exp-{run_id}-w{idx}-{i}"
-        history = load_history()
-        diff, text = await propose(client, ref=ref, best_diff=best.diff, history=history)
-        (RESULTS / "runs").mkdir(parents=True, exist_ok=True)
-        (RESULTS / "runs" / f"{exp_id}.proposal.md").write_text(text)
-        if diff is None:
-            print(f"[{exp_id}] proposer returned no diff; stopping worker {idx}", flush=True)
-            return
-        row = await run_experiment(pool, exp_id=exp_id, diff=diff, episodes=episodes, ref=ref, note="proposed")
-        if row["ok"] and await best.consider(diff, row["score"], exp_id):
-            print(f"[{exp_id}] NEW BEST score={row['score']:.2f}", flush=True)
+async def worker(
+    idx: int, pool: Any, client: Any, best: Best, *, iterations: int, episodes: int, ref: str, run_id: str, runtime: str
+) -> None:
+    # One claim per worker, reused across its experiments: on the VM path the
+    # in-guest bootstrap (toolchain + first build) costs 10-15 min, so a fresh
+    # claim per experiment would dominate the loop.
+    sb = await fleet.claim(pool, f"w-{run_id}-{idx}")
+    try:
+        await prepare_sandbox(sb, runtime=runtime, ref=ref)
+        for i in range(iterations):
+            exp_id = f"exp-{run_id}-w{idx}-{i}"
+            history = load_history()
+            diff, text = await propose(client, ref=ref, best_diff=best.diff, history=history)
+            (RESULTS / "runs").mkdir(parents=True, exist_ok=True)
+            (RESULTS / "runs" / f"{exp_id}.proposal.md").write_text(text)
+            if diff is None:
+                print(f"[{exp_id}] proposer returned no diff; stopping worker {idx}", flush=True)
+                return
+            row = await run_experiment(
+                pool, exp_id=exp_id, diff=diff, episodes=episodes, ref=ref, note="proposed", runtime=runtime, sb=sb
+            )
+            if row["ok"] and await best.consider(diff, row["score"], exp_id):
+                print(f"[{exp_id}] NEW BEST score={row['score']:.2f}", flush=True)
+    finally:
+        await fleet.release(sb)
 
 
 async def amain(args: argparse.Namespace) -> int:
@@ -190,12 +214,20 @@ async def amain(args: argparse.Namespace) -> int:
         ["bash", "-c", f"grep -m1 '^ARG CUA_REF=' {Path(__file__).resolve().parents[1] / 'image/Dockerfile'} | cut -d= -f2"],
         text=True,
     ).strip()
-    pool = await fleet.ensure_pool(args.image, name=args.pool, initial_size=args.workers, max_size=max(args.workers, 2))
-    print(f"[fleet] pool {pool.name} ready for {args.image}", flush=True)
+    if args.runtime == "gvisor":
+        # Blocked today: Fleet's pool operator creates gVisor pods without resource
+        # requests, and BestEffort runsc sandboxes get recycled ~80 s after start
+        # (see fleet.ensure_pool docstring). Kept for when the operator is fixed.
+        pool = await fleet.ensure_pool(args.image, name=args.pool, initial_size=args.workers, max_size=max(args.workers, 2))
+    else:
+        pool = await fleet.ensure_vm_pool(args.image or fleet.VM_IMAGE, name=args.pool, initial_size=args.workers, max_size=max(args.workers, 2))
+    print(f"[fleet] pool {pool.name} ({args.runtime}) ready for {args.image or fleet.VM_IMAGE}", flush=True)
     run_id = uuid.uuid4().hex[:6]
     best = Best()
     if args.baseline_only or best.score < 0:
-        row = await run_experiment(pool, exp_id=f"baseline-{run_id}", diff="", episodes=args.episodes, ref=ref, note="baseline")
+        row = await run_experiment(
+            pool, exp_id=f"baseline-{run_id}", diff="", episodes=args.episodes, ref=ref, note="baseline", runtime=args.runtime
+        )
         if row["ok"]:
             await best.consider("", row["score"], row["id"])
         if args.baseline_only:
@@ -204,7 +236,7 @@ async def amain(args: argparse.Namespace) -> int:
 
     client = AsyncAnthropic()
     await asyncio.gather(*(
-        worker(i, pool, client, best, iterations=args.iterations, episodes=args.episodes, ref=ref, run_id=run_id)
+        worker(i, pool, client, best, iterations=args.iterations, episodes=args.episodes, ref=ref, run_id=run_id, runtime=args.runtime)
         for i in range(args.workers)
     ))
     print(f"done. best score={best.score:.2f}; see {RESULTS / 'best.diff'}", flush=True)
@@ -213,7 +245,10 @@ async def amain(args: argparse.Namespace) -> int:
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--image", default=os.environ.get("FPS_BENCH_FLEET_IMAGE"), required=not os.environ.get("FPS_BENCH_FLEET_IMAGE"))
+    p.add_argument("--runtime", choices=["vm", "gvisor"], default="vm",
+                   help="vm: KubeVirt VM pool + in-guest bootstrap (works); gvisor: container image pool (blocked by operator bug)")
+    p.add_argument("--image", default=os.environ.get("FPS_BENCH_FLEET_IMAGE"),
+                   help="container image (gvisor) or containerDisk (vm; default fleet.VM_IMAGE)")
     p.add_argument("--pool", default=fleet.DEFAULT_POOL)
     p.add_argument("--workers", type=int, default=3, help="parallel claims / experiments")
     p.add_argument("--iterations", type=int, default=5, help="experiments per worker")

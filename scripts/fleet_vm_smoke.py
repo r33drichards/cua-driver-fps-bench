@@ -24,7 +24,7 @@ async def main(args: argparse.Namespace) -> int:
     t0 = time.monotonic()
     pool = await Pool.apply(
         Image.from_registry(args.image, os_type="linux", kind="vm"),
-        name=args.pool, cpu=4, memory_mb=8192, services={"server": 8000},
+        name=args.pool, cpu=args.cpu, memory_mb=args.memory_mb, services={"server": 8000},
         autoscaling=WarmPoolAutoscaling(min_pool_size=0, initial_pool_size=1, max_pool_size=2),
     )
     print(f"pool ok: {pool.name} ({time.monotonic() - t0:.0f}s)", flush=True)
@@ -52,4 +52,6 @@ if __name__ == "__main__":
     p.add_argument("--image", default=VM_IMAGE)
     p.add_argument("--pool", default="fps-bench-vm-smoke")
     p.add_argument("--keep", action="store_true")
+    p.add_argument("--cpu", type=int, default=2)
+    p.add_argument("--memory-mb", type=int, default=4096)
     raise SystemExit(asyncio.run(main(p.parse_args())))
