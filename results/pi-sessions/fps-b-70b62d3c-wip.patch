@@ -1,0 +1,125 @@
+diff --git a/cua-driver/rust/crates/platform-linux/src/input/mod.rs b/cua-driver/rust/crates/platform-linux/src/input/mod.rs
+index 9377555..ac02c3e 100644
+--- a/cua-driver/rust/crates/platform-linux/src/input/mod.rs
++++ b/cua-driver/rust/crates/platform-linux/src/input/mod.rs
+@@ -2406,6 +2406,38 @@ pub fn send_move_xtest_desktop(x: i32, y: i32) -> Result<()> {
+     Ok(())
+ }
+ 
++/// Query the real X11 pointer's current screen-absolute position (root_x, root_y).
++pub fn query_pointer_root() -> Result<(i32, i32)> {
++    let (conn, screen_num) = connect_x11_for_input()?;
++    let root = conn.setup().roots[screen_num].root;
++    let reply = conn.query_pointer(root)?.reply()?;
++    Ok((reply.root_x as i32, reply.root_y as i32))
++}
++
++/// Inject a *relative* real-pointer motion of (dx, dy) via XTest.
++///
++/// Absolute XTest warps (`send_move_xtest_desktop`) do not yield the expected
++/// `movementX`/`movementY` under a browser's Pointer Lock: the page sees a
++/// tiny fraction of the intended delta (observed mouse_ratio ~0.04 for the FPS
++/// bench). Pointer Lock re-anchors the cursor to its lock center after each
++/// event, so the only reliable way to make the page report a specific
++/// `movementX` is to move the pointer by `delta` *from wherever it currently
++/// sits*: query the real pointer, warp to `(cur + delta)`. The browser then
++/// computes `movementX = (cur + delta) - cur = delta` regardless of where it
++/// re-anchored. This is the X11 analogue of a relative device motion event.
++pub fn send_move_xtest_relative(dx: i32, dy: i32) -> Result<()> {
++    use x11rb::protocol::xtest::ConnectionExt as _;
++    let (conn, screen_num) = connect_x11_for_input()?;
++    let root = conn.setup().roots[screen_num].root;
++    let cur = conn.query_pointer(root)?.reply()?;
++    let nx = cur.root_x as i32 + dx;
++    let ny = cur.root_y as i32 + dy;
++    conn.xtest_fake_input(MOTION_NOTIFY_EVENT, 0, 0, root, nx as i16, ny as i16, 0)?;
++    conn.flush()?;
++    let _ = conn.get_input_focus()?.reply();
++    Ok(())
++}
++
+ /// Scroll the window under a screen-absolute point via real XTest wheel-button
+ /// events. X11 buttons 4/5 are vertical up/down and 6/7 horizontal left/right.
+ pub fn send_scroll_xtest_desktop(x: i32, y: i32, direction: &str, amount: usize) -> Result<()> {
+diff --git a/cua-driver/rust/crates/platform-linux/src/tools/impl_.rs b/cua-driver/rust/crates/platform-linux/src/tools/impl_.rs
+index f2f8081..444c0d9 100644
+--- a/cua-driver/rust/crates/platform-linux/src/tools/impl_.rs
++++ b/cua-driver/rust/crates/platform-linux/src/tools/impl_.rs
+@@ -20,6 +20,12 @@ use std::sync::{Arc, RwLock};
+ use crate::atspi::ElementCache;
+ use cursor_overlay::CursorRegistry;
+ 
++/// Per-target (`pid:cursor_id`) last requested absolute move_cursor coord, used
++/// to turn the agent's cumulative absolute coords into per-step relative XTest
++/// deltas for WebKitGTK Pointer-Lock mouse-look. See `send_move_xtest_relative`.
++static WEBKIT_LAST_MOVE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, (i32, i32)>>> =
++    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
++
+ fn window_target_candidates_for_pid(
+     windows: impl IntoIterator<Item = crate::x11::WindowInfo>,
+     pid: u32,
+@@ -6809,24 +6815,56 @@ impl Tool for MoveCursorTool {
+         // WebKitGTK (pywebview) ignores the synthetic overlay for input purposes:
+         // the page's PointerLockControls only sees REAL mousemove events, so the
+         // default scope=window path delivers nothing there (mouse_ratio=0 in the
+-        // baseline). The agent drives yaw with absolute screen coords whose step
+-        // delta equals the intended movementX, and after the focus click the real
+-        // pointer sits at the agent's initial cursor — so an absolute XTest move
+-        // to (xi, yi) produces movementX = (xi - prev_real_x) = the agent's dx.
+-        // Inject that real motion ONLY for WebKitGTK embedders, preserving the
+-        // "don't move the user's pointer" contract for every other target.
++        // baseline). The agent drives yaw with *cumulative* absolute screen coords
++        // (nx = cx + dx each turn), but under Pointer Lock the browser re-anchors
++        // the cursor to its lock center after every event, so an absolute XTest
++        // warp to `nx` produces a near-zero `movementX` (the page saw only ~3.5%
++        // of the intended pixels). The fix is RELATIVE XTest motion: track the
++        // last requested absolute coord per cursor, compute the per-step delta
++        // `d = (nx, ny) - last`, and warp the real pointer to `(current + d)`.
++        // The browser then reports `movementX = d` — exactly the agent's intended
++        // per-step turn — no matter where it re-anchored. The first move (no
++        // `last`) uses `d = requested - current_real`, which is also the correct
++        // per-step delta because the real pointer starts at the focus-click point.
++        // Non-WebKit targets keep the "don't move the user's pointer" contract.
+         let mut structured = json!({});
+         if let Some(pid) = args.opt_u64("pid") {
+             if pid != 0 && is_webkitgtk_embedder(pid as u32) {
+                 let xi = x.round() as i32;
+                 let yi = y.round() as i32;
++                let (dx, dy) = WEBKIT_LAST_MOVE
++                    .lock()
++                    .map(|m| {
++                        let key = format!("{pid}:{cursor_id}");
++                        match m.get(&key) {
++                            Some((lx, ly)) => (xi - lx, yi - ly),
++                            None => {
++                                // First move for this target: delta vs the real
++                                // pointer's current position (the focus-click site).
++                                match crate::input::query_pointer_root() {
++                                    Ok((rx, ry)) => (xi - rx, yi - ry),
++                                    Err(_) => (0, 0),
++                                }
++                            }
++                        }
++                    })
++                    .unwrap_or((xi, yi));
+                 let injected = tokio::task::spawn_blocking(move || {
+-                    crate::input::send_move_xtest_desktop(xi, yi)
++                    crate::input::send_move_xtest_relative(dx, dy)
+                 })
+                 .await;
++                // Record the requested absolute coord so the next call's delta
++                // is the intended per-step movement, independent of where the
++                // browser re-anchored the real pointer.
++                {
++                    let key = format!("{pid}:{cursor_id}");
++                    if let Ok(mut m) = WEBKIT_LAST_MOVE.lock() {
++                        m.insert(key, (xi, yi));
++                    }
++                }
+                 match injected {
+                     Ok(Ok(())) => {
+-                        structured = json!({"real_motion": "xtest_desktop", "x": xi, "y": yi });
++                        structured = json!({"real_motion": "xtest_relative", "dx": dx, "dy": dy, "x": xi, "y": yi });
+                     }
+                     Ok(Err(e)) => {
+                         return ToolResult::error(format!(
