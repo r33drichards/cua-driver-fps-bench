@@ -52,4 +52,11 @@ Useful diagnostics inside the sandbox (DISPLAY=:1):
   path when the background path provably cannot land.
 
 ## What's Been Tried
-(baseline first — record it here)
+- 2026-08-29 baseline (stock cua-driver 0.4.2 on a Fleet Ubuntu 24.04 VM, XFCE on
+  Xtigervnc :1, pywebview/WebKitGTK window): score 0.00, delivery_ratio 0.00 over
+  180 press_key calls; move_cursor moved only the overlay cursor (page saw no
+  mousemove). Control experiment on the same window: `xdotool key w` (XTest, focused
+  window) → keydown delivered; `xdotool key --window <id> w` (XSendEvent) → NOT
+  delivered; `xdotool mousemove` (XTest) → mousemove delivered. Conclusion: WebKitGTK
+  ignores synthetic XSendEvent key events; XTest-style injection into the focused
+  window works. press_key without pid/window fails with "No windows found for pid 0".

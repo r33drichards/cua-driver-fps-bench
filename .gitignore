@@ -5,3 +5,4 @@ results/runs/
 uv.lock
 .auto/runs/
 cua-driver/rust/target/
+results/pi-sessions/*.log

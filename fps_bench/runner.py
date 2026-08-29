@@ -94,6 +94,8 @@ async def run_benchmark(
     """Launch the game once, then run ``episodes`` agent episodes (reset between)."""
     agent = CuaDriverAgent(**(agent_kwargs or {}))
     print(f"[{label}] prebuild: {(await wait_prebuild(session)).strip()[-200:]}", flush=True)
+    # Stale game windows from earlier runs would confuse window targeting.
+    await session.run_command("pkill -f bench_ui.child || true", check=False)
     pid = await session.launch_window(
         html=task_module.game_html(),
         title=task_module.WINDOW_TITLE,
@@ -119,6 +121,8 @@ async def run_benchmark(
     close = getattr(session, "close_window", None)
     if close:
         await close(pid)
+    else:
+        await session.run_command(f"kill {int(pid)} 2>/dev/null || true", check=False)
     return summary
 
 

@@ -61,6 +61,7 @@ def main() -> int:
     c = sub.add_parser("create"); c.add_argument("name"); c.add_argument("--os", default="linux"); c.add_argument("--wait", action="store_true")
     d = sub.add_parser("delete"); d.add_argument("name")
     b = sub.add_parser("bind"); b.add_argument("session_id"); b.add_argument("name"); b.add_argument("--os", default="linux")
+    b.add_argument("--repo", default="", help="local checkout to sync as the workspace (default: this repo)")
     s = sub.add_parser("status"); s.add_argument("operation_id")
     a = p.parse_args()
 
@@ -82,7 +83,7 @@ def main() -> int:
         # pi-cua only honours a saved target that carries localCwd/remoteCwd, i.e. one
         # whose workspace was prepared (clone of this repo's origin at the local commit
         # + uncommitted overlay). Prepare it here (async backend op), then save.
-        repo = str(Path(__file__).resolve().parents[1])
+        repo = str(Path(a.repo).resolve()) if a.repo else str(Path(__file__).resolve().parents[1])
         r = call({
             "action": "prepare_execution", "name": a.name, "source_cwd": repo,
             "workspace_id": a.session_id, "tool_packages": ["npm:pi-autoresearch"],

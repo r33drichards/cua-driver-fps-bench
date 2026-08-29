@@ -29,5 +29,17 @@ fi
 if ! command -v cargo >/dev/null 2>&1; then
   curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path
 fi
+# Small VM disks (pi-cua Fleet VMs have ~10 GB root) cannot hold a cua-driver
+# release target dir; keep it on a RAM-backed tmpfs (sandboxes have 16 GB).
+# measure.sh exports CARGO_TARGET_DIR to this path.
+TARGET_DIR=/mnt/fps-target
+if ! mountpoint -q "$TARGET_DIR" 2>/dev/null; then
+  $SUDO mkdir -p "$TARGET_DIR"
+  $SUDO mount -t tmpfs -o size=7G,mode=0777 tmpfs "$TARGET_DIR"
+fi
+# Reclaim root-owned toolchains left by other bootstrap paths (the build runs as this user).
+$SUDO rm -rf /root/.rustup /root/.cargo 2>/dev/null || true
+$SUDO apt-get clean >/dev/null 2>&1 || true
+
 mkdir -p "$(dirname "$STAMP")" && touch "$STAMP"
 echo "bootstrap done"

@@ -1,40 +1,52 @@
 #!/usr/bin/env bash
 # Launch one headless pi session pinned to a pi-cua sandbox and run the
-# pi-autoresearch loop there (the sandbox executes pi's tools in a workspace
-# synced from this repo's origin + local overlay).
+# pi-autoresearch loop there. Bash runs on the sandbox; pi-cua keeps file tools
+# and git on the *local* workspace, so each session gets its own local clone
+# (never this checkout) and pushes its branch back to origin.
 #
 #   scripts/pi_autoresearch.sh <sandbox-name> [iterations]
 #
-# Run several in parallel (one per sandbox) for parallel hill-climbs:
+# Parallel hill-climbs: one call per sandbox, e.g.
 #   for s in fps-a fps-b fps-c; do scripts/pi_autoresearch.sh $s 20 & done; wait
 #
-# Logs: results/pi-sessions/<sandbox>-<session>.log ; the experiment log lives in
-# the sandbox workspace (.auto/log.jsonl) and is committed by pi-autoresearch —
-# pull it back with scripts/pi_collect.sh.
+# Local clone: $PI_WORKSPACES/<sandbox>-<session8> (default ~/cb-explore-pi-workspaces)
+# Log: results/pi-sessions/<sandbox>-<session8>.log ; experiment log = <clone>/.auto/log.jsonl
 set -euo pipefail
-cd "$(dirname "$0")/.."
+REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SANDBOX=${1:?sandbox name}
 ITER=${2:-20}
 SESSION=$(python3 -c 'import uuid; print(uuid.uuid4())')
-mkdir -p results/pi-sessions
-LOG="results/pi-sessions/${SANDBOX}-${SESSION:0:8}.log"
+SHORT=${SESSION:0:8}
+WS_ROOT=${PI_WORKSPACES:-$HOME/cb-explore-pi-workspaces}
+WS="$WS_ROOT/$SANDBOX-$SHORT"
+BRANCH="autoresearch/$SANDBOX-$(date -u +%Y%m%d)-$SHORT"
+ORIGIN=$(git -C "$REPO_DIR" remote get-url origin)
+BASE=$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD)
+mkdir -p "$WS_ROOT" "$REPO_DIR/results/pi-sessions"
+LOG="$REPO_DIR/results/pi-sessions/$SANDBOX-$SHORT.log"
 
-# Pin the (not yet created) session to the sandbox; pi-cua reads this at session_start.
-.venv/bin/python scripts/pi_sandbox.py bind "$SESSION" "$SANDBOX" --os linux >/dev/null
+# Fresh local clone at the pushed tip of the current branch (the sandbox clones
+# the same commit from origin, so both sides agree).
+git clone -q --branch "$BASE" "$ORIGIN" "$WS"
+git -C "$WS" checkout -q -b "$BRANCH"
+
+# Pin the (not yet created) session to the sandbox; prepares the remote workspace.
+( cd "$WS" && "$REPO_DIR/.venv/bin/python" "$REPO_DIR/scripts/pi_sandbox.py" bind "$SESSION" "$SANDBOX" --os linux --repo "$WS" >/dev/null )
 
 PROMPT=$(cat <<EOF
-You are running the autoresearch loop for this repository ON THE SANDBOX (all tools
-execute there; the workspace is this repo). Follow the autoresearch-create skill:
-1. Read .auto/prompt.md and .auto/measure.sh.
-2. git checkout -b autoresearch/cua-driver-keys-$(date -u +%Y%m%d)-${SESSION:0:6}
-3. Call init_experiment (name: cua-driver-fps, metric: score, unit: fraction, direction: higher).
-4. Run the baseline with run_experiment (command: ./.auto/measure.sh, timeout 1800s — the first
-   run compiles cua-driver from scratch) and log it. Then loop: edit files in scope,
+You are running the autoresearch loop for this repository ON THE SANDBOX: bash runs there
+(the workspace is this repo, synced), while file edits and git happen in the local clone
+$WS on branch $BRANCH. Follow the autoresearch-create skill:
+1. Read .auto/prompt.md and .auto/measure.sh. The branch already exists; do not create another.
+2. Call init_experiment (name: cua-driver-fps, metric: score, unit: fraction, direction: higher).
+3. Run the baseline with run_experiment (command: ./.auto/measure.sh, timeout 1800s — the first
+   run compiles cua-driver from scratch on a tmpfs) and log it. Then loop: edit files in scope,
    run_experiment, log_experiment with asi notes, keep/discard. Use EPISODES=1 while exploring,
    EPISODES=5 before keeping. Stop after ${ITER} experiments or when .auto/config.json maxIterations hits.
-5. Keep .auto/prompt.md "What's Been Tried" updated. Never ask questions; keep going.
+4. Keep .auto/prompt.md "What's Been Tried" updated. After every keep, run: git push -u origin $BRANCH
+5. Never ask questions; keep going. When done, push the branch and print a 10-line summary.
 EOF
 )
 
-echo "session=$SESSION sandbox=$SANDBOX log=$LOG"
-pi --session-id "$SESSION" --name "autoresearch-$SANDBOX" --thinking high -p "$PROMPT" 2>&1 | tee "$LOG"
+echo "session=$SESSION sandbox=$SANDBOX clone=$WS branch=$BRANCH log=$LOG"
+( cd "$WS" && pi --session-id "$SESSION" --name "autoresearch-$SANDBOX" --thinking high -p "$PROMPT" ) 2>&1 | tee "$LOG"
