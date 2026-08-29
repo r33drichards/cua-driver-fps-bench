@@ -47,6 +47,16 @@ if ! mountpoint -q "$TARGET_DIR" 2>/dev/null; then
   $SUDO mkdir -p "$TARGET_DIR"
   $SUDO mount -t tmpfs -o size=5G,mode=0777 tmpfs "$TARGET_DIR"
 fi
+# Make EVERY cargo invocation (not just measure.sh) build into the tmpfs, otherwise an
+# ad-hoc `cargo check` in the workspace fills the 10 GB root disk.
+for h in /home/cua /root; do
+  [ -d "$h" ] || continue
+  $SUDO mkdir -p "$h/.cargo"
+  printf '[build]\ntarget-dir = "%s"\n' "$TARGET_DIR" | $SUDO tee "$h/.cargo/config.toml" >/dev/null
+  $SUDO chown -R "$(stat -c %u:%g "$h")" "$h/.cargo" 2>/dev/null || true
+done
+# Drop on-disk target dirs from earlier sessions.
+$SUDO find /home/cua/workspaces -maxdepth 4 -type d -name target -path '*/rust/target' -exec rm -rf {} + 2>/dev/null || true
 # Reclaim root-owned toolchains left by other bootstrap paths (the build runs as this user).
 $SUDO rm -rf /root/.rustup /root/.cargo 2>/dev/null || true
 $SUDO apt-get clean >/dev/null 2>&1 || true
