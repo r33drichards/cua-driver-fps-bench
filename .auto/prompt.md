@@ -111,6 +111,24 @@ owns focus, use XTest" idea to pointer motion.
   recenters the OS pointer each frame, so an ABSOLUTE XTest warp to (nx,cy)
   yields movementX = nx - recenter_pos, not nx - prev_agent_pos → only ~32% of
   sent pixels register → imprecise yaw → oscillation near the goal.
+- Exp 5/6 (DISCARDED): relative XTest motion (query pointer, warp to cur+dx;
+  or cache the lock anchor once and warp to anchor+dx). Delivers full
+  movementX (mouse_ratio 0.036→1.087, locked=True) BUT score COLLAPSED to 0.0
+  (progress 0.96→0.79): per-move delivered_px is asymmetric (+99 forward /
+  -235 back for ±110 intent) → net drift yaw away from target → agent never
+  faces goal. Exp6==Exp5 exactly, so the bias is NOT a query race; it is
+  inherent to XTest warps under pointer lock on Xtigervnc/WebKitGTK (the
+  browser's per-frame recenter to the lock anchor is partially counted by the
+  page's mousemove handler, asymmetrically). DEAD END — do not retry
+  relative/anchor motion on this stack; need true XI2 relative valuator motion.
+- Exp 7 (DISCARDED): added a sync round-trip BEFORE the XTest warp to let the
+  prior recenter settle. mouse_ratio IDENTICAL (0.3193) — the recenter races
+  AFTER our warp, not before, so syncing first is a no-op. Reverted.
+- Final state: Exp 4 stands. Score variance (0.6 on EPISODES=5, 1.0 on
+  EPISODES=2) is run-to-run noise from the erratic movementX delivery, not a
+  lock or key problem. The agent runs a fixed 18 moves + 42 presses (=60
+  max_actions) every episode; success depends on whether the erratic yaw put it
+  inside the goal radius by action 60 (progress 0.952 vs 0.962).
 
 ### Infrastructure blocker (2026-08-29)
 - The Fleet warm pool `cua-pi-linux-rw` started returning **403 Forbidden** for
