@@ -74,7 +74,8 @@ set +e
 set -e
 
 # 5. Bring the experiment branch home and publish it.
-if git -C "$WS" fetch -q "ssh://cua@$SANDBOX$REMOTE_CWD" "$BRANCH:refs/remotes/sandbox/$BRANCH" 2>/dev/null; then
+export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$HOME/.ssh/cua_known_hosts"
+if git -C "$WS" fetch -q "ssh://cua@$SANDBOX$REMOTE_CWD" "$BRANCH:refs/remotes/sandbox/$BRANCH"; then
   git -C "$WS" branch -f "$BRANCH" "refs/remotes/sandbox/$BRANCH"
   git -C "$WS" push -q -u origin "$BRANCH" && echo "pushed $BRANCH ($(git -C "$WS" rev-parse --short "$BRANCH"))"
 else
