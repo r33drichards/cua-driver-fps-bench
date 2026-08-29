@@ -77,6 +77,13 @@ try → measure → keep/revert loop (`init_experiment` / `run_experiment` / `lo
 * `scripts/pi_autoresearch.sh <sandbox> [iterations]` — pins a fresh pi session to a sandbox
   and runs the loop non-interactively; run one per sandbox for parallel hill-climbs.
 
+The origin is private, and pi-cua clones the workspace on the sandbox, so
+`scripts/guest_bootstrap.py` (run automatically by the launcher) injects a GitHub
+token at runtime as a `git` credential-store entry for user `cua` — per
+[sandbox secrets](https://cua.ai/docs/how-to-guides/sandbox/secrets), never into the
+image. It uses `GH_SANDBOX_TOKEN` (prefer a fine-grained read-only PAT) or falls back
+to `gh auth token`.
+
 ```bash
 pi install npm:pi-autoresearch                       # once (pi-cua already installed)
 .venv/bin/python scripts/pi_sandbox.py create fps-a --wait
