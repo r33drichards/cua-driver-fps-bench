@@ -30,6 +30,10 @@ LOG="$REPO_DIR/results/pi-sessions/$SANDBOX-$SHORT.log"
 git clone -q --branch "$BASE" "$ORIGIN" "$WS"
 git -C "$WS" checkout -q -b "$BRANCH"
 
+# Make `ssh cua@<sandbox>` reach the live tailnet node (re-created VMs get a -N suffix)
+# BEFORE pi-cua health-checks it, otherwise it may "repair" (re-apply the pool).
+"$REPO_DIR/.venv/bin/python" "$REPO_DIR/scripts/pi_sandbox.py" ssh-fix "$SANDBOX"
+
 # Pin the (not yet created) session to the sandbox; prepares the remote workspace.
 ( cd "$WS" && "$REPO_DIR/.venv/bin/python" "$REPO_DIR/scripts/pi_sandbox.py" bind "$SESSION" "$SANDBOX" --os linux --repo "$WS" >/dev/null )
 

@@ -67,6 +67,57 @@ def call(request: dict, *, sandbox: str | None = None) -> dict:
     return json.loads(line)
 
 
+def live_tailscale_ip(name: str) -> str | None:
+    """IP of the online tailnet node named <name> or <name>-N (re-created sandboxes get a suffix)."""
+    out = subprocess.run(["tailscale", "status"], capture_output=True, text=True).stdout
+    best: tuple[int, str] | None = None
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) < 2 or "offline" in line:
+            continue
+        host = parts[1]
+        if host == name:
+            return parts[0]
+        if host.startswith(name + "-") and host[len(name) + 1:].isdigit():
+            n = int(host[len(name) + 1:])
+            if best is None or n > best[0]:
+                best = (n, parts[0])
+    return best[1] if best else None
+
+
+def ssh_fix(name: str) -> int:
+    """pi-cua SSHes to `cua@<name>`; after a re-create Tailscale names the new VM <name>-N
+    while <name> still resolves to the dead node. Pin the name to the live IP in an
+    ssh_config include and drop the stale host key so accept-new works."""
+    ip = live_tailscale_ip(name)
+    if not ip:
+        raise SystemExit(f"no online tailnet node for {name}")
+    ssh_dir = Path.home() / ".ssh"
+    inc = ssh_dir / "cua-sandboxes.conf"
+    blocks = {}
+    if inc.exists():
+        cur = None
+        for line in inc.read_text().splitlines():
+            if line.startswith("Host "):
+                cur = line.split()[1]
+                blocks[cur] = []
+            elif cur:
+                blocks[cur].append(line)
+    blocks[name] = [f"  HostName {ip}"]
+    inc.write_text("".join(f"Host {h}\n" + "\n".join(b) + "\n" for h, b in blocks.items()))
+    cfg = ssh_dir / "config"
+    line = "Include ~/.ssh/cua-sandboxes.conf"
+    text = cfg.read_text() if cfg.exists() else ""
+    if line not in text:
+        cfg.write_text(f"{line}\n{text}")  # Include must precede Host blocks
+    for kh in (ssh_dir / "cua_known_hosts", ssh_dir / "known_hosts"):
+        if kh.exists():
+            for host in (name, ip):
+                subprocess.run(["ssh-keygen", "-R", host, "-f", str(kh)], capture_output=True)
+    print(f"{name} -> {ip} (ssh config include updated, stale host keys purged)")
+    return 0
+
+
 def wait_operation(op_id: str, timeout: float = 1800) -> dict:
     t0 = time.monotonic()
     last = ""
@@ -91,7 +142,12 @@ def main() -> int:
     b = sub.add_parser("bind"); b.add_argument("session_id"); b.add_argument("name"); b.add_argument("--os", default="linux")
     b.add_argument("--repo", default="", help="local checkout to sync as the workspace (default: this repo)")
     s = sub.add_parser("status"); s.add_argument("operation_id")
+    x = sub.add_parser("ssh-fix", help="point `ssh cua@<name>` at the live Tailscale node (X-1, X-2 ...) and purge stale host keys")
+    x.add_argument("name")
     a = p.parse_args()
+
+    if a.cmd == "ssh-fix":
+        return ssh_fix(a.name)
 
     if a.cmd == "list":
         print(json.dumps(call({"action": "list"}), indent=2))
