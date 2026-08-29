@@ -92,16 +92,25 @@ owns focus, use XTest" idea to pointer motion.
   embedders skip the GTK refusal and fall through to the auto-escalation, so the
   foreground XTest key actually fires. Plain (non-WebKit) GTK apps keep the
   refusal. Minimal, unblocks the already-committed intent. Live measurement pending.
-- Exp 3 (this iteration): move_cursor default `scope=window` only moves the
+- Exp 3 (seeded, 9fad87f): move_cursor default `scope=window` only moves the
   synthetic overlay, so the page's PointerLockControls sees no mousemove
   (mouse_ratio=0). Added: when the target pid is a WebKitGTK embedder, also inject
-  a REAL absolute XTest motion via `send_move_xtest_desktop(xi, yi)`. The agent
-  drives yaw with absolute screen coords whose per-step delta equals the intended
-  movementX, and after the focus click the real pointer sits at the agent's initial
-  cursor — so an absolute XTest move to (xi, yi) yields movementX = dx. Non-WebKit
-  targets keep the "don't move the user's pointer" contract. Live measurement
-  pending; risk: under Chromium/WebKitGTK pointer-lock, absolute XTest warps may
-  not produce the expected movementX delta (may need relative XTest motion instead).
+  a REAL absolute XTest motion via `send_move_xtest_desktop(xi, yi)`. Non-WebKit
+  targets keep the "don't move the user's pointer" contract.
+- Exp 4 (KEPT, this loop): the initial `click` on the canvas was a synthetic
+  XSendEvent (route=global_input), which the browser does NOT count as a user
+  gesture → `requestPointerLock()` was always denied → `locked=false` for the
+  whole episode, so PointerLockControls never rotated from move_cursor's
+  mousemove (mouse_ratio=0.036, score=0.0). Fix: ClickTool auto-escalates
+  WebKitGTK embedders to the foreground XTest rung (`effective_fg =
+  delivery.is_foreground() || (!fg && is_webkitgtk_embedder(pid))`), giving a
+  REAL XTest button event (send_event=false) so pointer lock engages. Mirrors
+  press_key's existing auto-escalation. Result (EPISODES=5): score 0.0→0.6,
+  mouse_ratio 0.036→0.319, progress 0.37→0.957, moves 44→18. Keys already 1.0.
+  2/5 failures hit max_actions at progress 0.95: under pointer lock the browser
+  recenters the OS pointer each frame, so an ABSOLUTE XTest warp to (nx,cy)
+  yields movementX = nx - recenter_pos, not nx - prev_agent_pos → only ~32% of
+  sent pixels register → imprecise yaw → oscillation near the goal.
 
 ### Infrastructure blocker (2026-08-29)
 - The Fleet warm pool `cua-pi-linux-rw` started returning **403 Forbidden** for

@@ -2504,6 +2504,17 @@ impl Tool for ClickTool {
         };
         let delivery = crate::input::delivery::DeliveryMode::from_args(&args);
         let count = args.u64_or("count", 1) as usize;
+        // WebKitGTK (pywebview) needs a REAL XTest button event for the canvas
+        // click to count as a user gesture — the browser only honors
+        // `requestPointerLock()` from a genuine (send_event=false) pointer event,
+        // and synthetic XSendEvent clicks (the default background route) leave
+        // pointer lock un-granted so PointerLockControls never rotates from
+        // move_cursor's mousemove. Auto-escalate WebKitGTK embedders to the
+        // foreground XTest rung, exactly like press_key does for keys. Plain
+        // GTK / Chromium / native targets keep the no-focus-steal contract.
+        let is_webkit_target = is_webkitgtk_embedder(pid);
+        let auto_foreground = !delivery.is_foreground() && is_webkit_target;
+        let effective_fg = delivery.is_foreground() || auto_foreground;
         // Surface 5: reject unknown buttons so a typo can't silently fall through
         // to a left-click. Empty string keeps back-compat with old clients.
         let button_str_raw = args.str_or("button", "left").to_lowercase();
@@ -2818,14 +2829,14 @@ impl Tool for ClickTool {
                 }
                 Ok(if fg { "x11_pixel_fg" } else { "x11_pixel" })
             };
-            if delivery.is_foreground() {
+            if effective_fg {
                 crate::input::with_x11_foreground(xid, 80, || inject(true))
             } else {
                 inject(false)
             }
         })
         .await;
-        let mode_label = if delivery.is_foreground() {
+        let mode_label = if effective_fg {
             "foreground"
         } else {
             "background"
