@@ -24,15 +24,19 @@ DEFAULT_IMAGE = os.environ.get(
 WINDOW_TITLE = "L-Platform"
 WINDOW_W, WINDOW_H = 800, 600
 
-# Optimal key sequence from the start pose (heading 180 = facing the corner):
-# walk 8 steps down the short leg, turn left 90° (6 x 15°) to face +X, walk 14 steps.
-ORACLE_KEYS = ["w"] * 8 + ["ArrowLeft"] * 6 + ["w"] * 14
+# Oracle route from the start pose (facing -Z toward the corner): walk 8 units
+# down the short leg, turn the camera 90° left (mouse look) to face +X, walk 14 units.
+# Each ("key", k) is one programmatic press (1 unit); ("look", deg) turns the camera.
+ORACLE_STEPS: list[tuple[str, str | float]] = (
+    [("key", "w")] * 8 + [("look", 90.0)] + [("key", "w")] * 14
+)
 
 
 def game_html() -> str:
-    """Return the game page with three.js inlined (the desktop has no internet)."""
-    three = (GUI / "three.min.js").read_text()
-    return (GUI / "index.html").read_text().replace("__THREE__", three, 1)
+    """Return the game page with three.js + PointerLockControls inlined (no internet on the desktop)."""
+    html = (GUI / "index.html").read_text()
+    html = html.replace("__THREE__", (GUI / "three.min.js").read_text(), 1)
+    return html.replace("__POINTERLOCK__", (GUI / "PointerLockControls.js").read_text(), 1)
 
 
 @cb.tasks_config(split="train")
@@ -42,10 +46,10 @@ def load():
             description=(
                 "You are in a first-person 3D game on an L-shaped floating platform. "
                 "Walk to the glowing green goal marker at the far end of the platform "
-                "without falling off. W/S move forward/back one step, A/D strafe, "
-                "Left/Right arrows turn 15 degrees."
+                "without falling off. Mouse moves the camera (look), W/A/S/D move, "
+                "Space jumps."
             ),
-            metadata={"os_type": "linux", "oracle_keys": ORACLE_KEYS},
+            metadata={"os_type": "linux", "oracle_steps": ORACLE_STEPS},
             computer={
                 "provider": "native",
                 "setup_config": {
@@ -83,6 +87,7 @@ async def evaluate(task_cfg: cb.Task, session: cb.DesktopSession | cb.MobileSess
 
 @cb.solve_task(split="train")
 async def solve(task_cfg: cb.Task, session: cb.DesktopSession | cb.MobileSession):
-    """Oracle: drive the game through its programmatic hook (no OS input path)."""
-    for key in ORACLE_KEYS:
-        await session.execute_javascript(pid, f"window.__press({key!r})")
+    """Oracle: drive the game through its programmatic hooks (no OS input path)."""
+    for kind, arg in ORACLE_STEPS:
+        js = f"window.__press({arg!r})" if kind == "key" else f"window.__look({float(arg)})"
+        await session.execute_javascript(pid, js)

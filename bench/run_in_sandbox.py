@@ -95,6 +95,8 @@ async def amain(args: argparse.Namespace) -> int:
     # pi-autoresearch contract
     print(f"METRIC score={s['score']:.4f}")
     print(f"METRIC delivery_ratio={s['delivery_ratio']:.4f}")
+    print(f"METRIC mouse_ratio={s['mouse_ratio']:.4f}")
+    print(f"METRIC mean_mouse_moves={s['mean_mouse_moves']:.1f}")
     print(f"METRIC mean_progress={s['mean_progress']:.4f}")
     print(f"METRIC mean_presses={s['mean_presses']:.1f}")
     print(f"METRIC falls={s['falls']}")

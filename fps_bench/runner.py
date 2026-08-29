@@ -137,6 +137,39 @@ async def local_session() -> Any:
     return session
 
 
+async def api_url_session(api_url: str) -> Any:
+    """Client-only session against a reachable computer-server (e.g. a pi-cua sandbox over Tailscale)."""
+    from cua_bench.computers.remote import RemoteDesktopSession
+
+    cfg = task_module.load()[0].computer["setup_config"]
+    session = RemoteDesktopSession(api_url=api_url, os_type="linux", width=cfg["width"], height=cfg["height"])
+    await session.start()
+    return session
+
+
+async def ensure_guest_bootstrap(session: Any, *, timeout: float = 1500) -> str:
+    """Run bench/bootstrap_guest.sh on the env (detached via systemd-run) and wait for it."""
+    script = (Path(__file__).resolve().parents[1] / "bench" / "bootstrap_guest.sh").read_text()
+    probe = await session.run_command("python3 -c 'import bench_ui' >/dev/null 2>&1 && echo HAS || echo NO", check=False)
+    if "HAS" in (probe.get("stdout") or ""):
+        return "bench_ui present"
+    await session.write_file("/tmp/fps-bootstrap.sh", script)
+    launch = ("if [ \"$(id -u)\" -eq 0 ]; then S=; else S=sudo; fi; $S rm -f /tmp/fps-bootstrap.rc; "
+              "$S systemd-run --collect --unit=fps-bootstrap sh -c 'bash /tmp/fps-bootstrap.sh >/tmp/fps-bootstrap.log 2>&1; echo $? >/tmp/fps-bootstrap.rc'")
+    await session.run_command(launch, check=False)
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout:
+        r = await session.run_command("cat /tmp/fps-bootstrap.rc 2>/dev/null || echo RUNNING", check=False)
+        out = (r.get("stdout") or "").strip()
+        if out and out != "RUNNING":
+            log = await session.run_command("tail -n 5 /tmp/fps-bootstrap.log", check=False)
+            if out.splitlines()[-1] != "0":
+                raise RuntimeError(f"guest bootstrap failed: {log.get('stdout')}")
+            return log.get("stdout") or ""
+        await asyncio.sleep(10)
+    raise TimeoutError("guest bootstrap timed out")
+
+
 async def sandbox_session(ref_path: Path) -> FleetSession:
     from cua_sandbox import Sandbox
 
@@ -151,6 +184,10 @@ async def amain(args: argparse.Namespace) -> int:
     if args.local:
         session = await local_session()
         closer = session.close
+    elif args.api_url:
+        session = await api_url_session(args.api_url)
+        closer = session.close
+        print("bootstrap:", (await ensure_guest_bootstrap(session)).strip()[-200:], flush=True)
     else:
         session = await sandbox_session(Path(args.sandbox_ref))
         closer = session.sb.disconnect
@@ -170,6 +207,7 @@ def main() -> int:
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument("--local", action="store_true", help="run in a local docker desktop")
     g.add_argument("--sandbox-ref", help="JSON file from Sandbox.to_dict() of a live Fleet sandbox")
+    g.add_argument("--api-url", help="computer-server URL of a reachable env, e.g. http://100.88.180.1:8000 (pi-cua sandbox over Tailscale)")
     p.add_argument("--episodes", type=int, default=3)
     p.add_argument("--label", default="manual")
     p.add_argument("--out", default="results/runs/manual.json")

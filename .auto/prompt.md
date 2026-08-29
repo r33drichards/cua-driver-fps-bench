@@ -5,14 +5,18 @@ Make `cua-driver call press_key` reliably deliver key presses to a pywebview
 (WebKitGTK) window on the X11 XFCE desktop of this Linux sandbox. The benchmark
 (`bench/run_in_sandbox.py`) launches a three.js first-person game on an L-shaped
 platform (`tasks/fps_lshape/gui/index.html`), and an agent (`fps_bench/agent.py`)
-that reads the game state but can only act through `cua-driver call press_key`.
-One keydown = one step / one 15° turn. The episode succeeds when the goal is reached.
+that reads the game state but can only act through cua-driver: `move_cursor`
+(relative mouse motion turns the camera via three.js PointerLockControls, 0.002
+rad/px) and `press_key` "w" taps (each keydown moves 0.5 units). The first
+action is a `click` on the canvas (focus + pointer-lock request). The episode
+succeeds when the goal is reached.
 
 ## Metrics
 - **Primary**: `score` (fraction of episodes that reach the goal, 0..1, higher is better)
-- **Secondary**: `delivery_ratio` (keydowns seen by the page / press_key calls — the
-  most sensitive signal; raise this first), `mean_progress`, `mean_presses`,
-  `falls`, `driver_errors`, `bench_seconds`
+- **Secondary**: `delivery_ratio` (keydowns seen by the page / press_key calls) and
+  `mouse_ratio` (mouse pixels the page saw / pixels sent via move_cursor) — the
+  most sensitive signals; raise these first. Also `mean_progress`, `mean_presses`,
+  `mean_mouse_moves`, `falls`, `driver_errors`, `bench_seconds`
 
 ## How to Run
 `./.auto/measure.sh` — bootstraps guest deps (idempotent), rebuilds cua-driver
