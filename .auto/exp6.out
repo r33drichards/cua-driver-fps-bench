@@ -1,0 +1,222 @@
+warning: unnecessary trailing semicolon
+    --> crates/platform-linux/src/input/mod.rs:2444:72
+     |
+2444 |     conn.xtest_fake_input(MOTION_NOTIFY_EVENT, 0, 0, root, nx, ny, 0)?;;
+     |                                                                        ^ help: remove this semicolon
+     |
+     = note: `#[warn(redundant_semicolons)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `render_dash` is never used
+   --> crates/platform-linux/src/pip/mod.rs:749:4
+    |
+749 | fn render_dash(canvas: &mut Canvas, frames: &[&PipFrame], dock: &LayoutRect, icons: &[LayoutRect]) {
+    |    ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `rect` is never used
+   --> crates/platform-linux/src/pip/mod.rs:952:8
+    |
+884 | impl Canvas {
+    | ----------- method in this implementation
+...
+952 |     fn rect(&mut self, rect: Rect, color: Color) {
+    |        ^^^^
+
+warning: function `build_registry` is never used
+    --> crates/platform-linux/src/tools/impl_.rs:8146:8
+     |
+8146 | pub fn build_registry(compat: bool) -> ToolRegistry {
+     |        ^^^^^^^^^^^^^^
+
+warning: function `omnibox_holds_setup_url` is never used
+   --> crates/platform-linux/src/browser_setup_ui.rs:165:4
+    |
+165 | fn omnibox_holds_setup_url(node: &AtspiNode, descriptor: &BrowserSetupDescriptor) -> bool {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `current_foreground_target` is never used
+  --> crates/platform-linux/src/wayland/mod.rs:90:4
+   |
+90 | fn current_foreground_target() -> Option<(u32, u64)> {
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `app_bundle_path` is never used
+  --> crates/cua-driver/src/bundle.rs:88:8
+   |
+88 | pub fn app_bundle_path() -> String {
+   |        ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `permission_flag` is never used
+    --> crates/cua-driver/src/cli.rs:3324:4
+     |
+3324 | fn permission_flag(structured: &serde_json::Value, key: &str) -> bool {
+     |    ^^^^^^^^^^^^^^^
+
+warning: function `permission_grant_is_ready` is never used
+    --> crates/cua-driver/src/cli.rs:3331:4
+     |
+3331 | fn permission_grant_is_ready(structured: &serde_json::Value) -> bool {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `permission_grant_needs_direct_capture` is never used
+    --> crates/cua-driver/src/cli.rs:3337:4
+     |
+3337 | fn permission_grant_needs_direct_capture(structured: &serde_json::Value) -> bool {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `permission_status_request` is never used
+    --> crates/cua-driver/src/cli.rs:3342:4
+     |
+3342 | fn permission_status_request() -> crate::serve::DaemonRequest {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_permission_gate_pending` is never used
+   --> crates/cua-driver/src/serve.rs:646:8
+    |
+646 | pub fn set_permission_gate_pending(pending: bool) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `capture_permissions_gate_completed` is never used
+    --> crates/cua-driver/src/telemetry.rs:1169:15
+     |
+1169 | pub(crate) fn capture_permissions_gate_completed(
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `permissions_gate_resolution` is never used
+    --> crates/cua-driver/src/telemetry.rs:1203:21
+     |
+1203 | pub(crate) const fn permissions_gate_resolution(
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `capture_permissions_gate_started` is never used
+    --> crates/cua-driver/src/telemetry.rs:1216:15
+     |
+1216 | pub(crate) fn capture_permissions_gate_started(
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `capture_permissions_gate_dismissed` is never used
+    --> crates/cua-driver/src/telemetry.rs:1233:15
+     |
+1233 | pub(crate) fn capture_permissions_gate_dismissed(
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unnecessary trailing semicolon
+    --> crates/platform-linux/src/input/mod.rs:2444:72
+     |
+2444 |     conn.xtest_fake_input(MOTION_NOTIFY_EVENT, 0, 0, root, nx, ny, 0)?;;
+     |                                                                        ^ help: remove this semicolon
+     |
+     = note: `#[warn(redundant_semicolons)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `render_dash` is never used
+   --> crates/platform-linux/src/pip/mod.rs:749:4
+    |
+749 | fn render_dash(canvas: &mut Canvas, frames: &[&PipFrame], dock: &LayoutRect, icons: &[LayoutRect]) {
+    |    ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `rect` is never used
+   --> crates/platform-linux/src/pip/mod.rs:952:8
+    |
+884 | impl Canvas {
+    | ----------- method in this implementation
+...
+952 |     fn rect(&mut self, rect: Rect, color: Color) {
+    |        ^^^^
+
+warning: function `build_registry` is never used
+    --> crates/platform-linux/src/tools/impl_.rs:8146:8
+     |
+8146 | pub fn build_registry(compat: bool) -> ToolRegistry {
+     |        ^^^^^^^^^^^^^^
+
+warning: function `omnibox_holds_setup_url` is never used
+   --> crates/platform-linux/src/browser_setup_ui.rs:165:4
+    |
+165 | fn omnibox_holds_setup_url(node: &AtspiNode, descriptor: &BrowserSetupDescriptor) -> bool {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `current_foreground_target` is never used
+  --> crates/platform-linux/src/wayland/mod.rs:90:4
+   |
+90 | fn current_foreground_target() -> Option<(u32, u64)> {
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `app_bundle_path` is never used
+  --> crates/cua-driver/src/bundle.rs:88:8
+   |
+88 | pub fn app_bundle_path() -> String {
+   |        ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `permission_flag` is never used
+    --> crates/cua-driver/src/cli.rs:3324:4
+     |
+3324 | fn permission_flag(structured: &serde_json::Value, key: &str) -> bool {
+     |    ^^^^^^^^^^^^^^^
+
+warning: function `permission_grant_is_ready` is never used
+    --> crates/cua-driver/src/cli.rs:3331:4
+     |
+3331 | fn permission_grant_is_ready(structured: &serde_json::Value) -> bool {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `permission_grant_needs_direct_capture` is never used
+    --> crates/cua-driver/src/cli.rs:3337:4
+     |
+3337 | fn permission_grant_needs_direct_capture(structured: &serde_json::Value) -> bool {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `permission_status_request` is never used
+    --> crates/cua-driver/src/cli.rs:3342:4
+     |
+3342 | fn permission_status_request() -> crate::serve::DaemonRequest {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_permission_gate_pending` is never used
+   --> crates/cua-driver/src/serve.rs:646:8
+    |
+646 | pub fn set_permission_gate_pending(pending: bool) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `capture_permissions_gate_completed` is never used
+    --> crates/cua-driver/src/telemetry.rs:1169:15
+     |
+1169 | pub(crate) fn capture_permissions_gate_completed(
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `permissions_gate_resolution` is never used
+    --> crates/cua-driver/src/telemetry.rs:1203:21
+     |
+1203 | pub(crate) const fn permissions_gate_resolution(
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `capture_permissions_gate_started` is never used
+    --> crates/cua-driver/src/telemetry.rs:1216:15
+     |
+1216 | pub(crate) fn capture_permissions_gate_started(
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `capture_permissions_gate_dismissed` is never used
+    --> crates/cua-driver/src/telemetry.rs:1233:15
+     |
+1233 | pub(crate) fn capture_permissions_gate_dismissed(
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+cua-driver 0.22.2
+episode 1/1: reached=False progress=0.79 presses=34 keydowns=34 falls=0 max_actions
+METRIC score=0.0000
+METRIC delivery_ratio=1.0000
+METRIC mouse_ratio=1.0872
+METRIC mean_mouse_moves=26.0
+METRIC mean_progress=0.7911
+METRIC mean_presses=34.0
+METRIC falls=0
+METRIC driver_errors=0
+METRIC bench_seconds=62.6
+driver: cua-driver 0.22.2

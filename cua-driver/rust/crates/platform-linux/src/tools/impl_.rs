@@ -6820,12 +6820,16 @@ impl Tool for MoveCursorTool {
         // WebKitGTK (pywebview) ignores the synthetic overlay for input purposes:
         // the page's PointerLockControls only sees REAL mousemove events, so the
         // default scope=window path delivers nothing there (mouse_ratio=0 in the
-        // baseline). The agent drives yaw with absolute screen coords whose step
-        // delta equals the intended movementX, and after the focus click the real
-        // pointer sits at the agent's initial cursor — so an absolute XTest move
-        // to (xi, yi) produces movementX = (xi - prev_real_x) = the agent's dx.
-        // Inject that real motion ONLY for WebKitGTK embedders, preserving the
-        // "don't move the user's pointer" contract for every other target.
+        // baseline). Inject a REAL absolute XTest warp to (x, y) so the page sees
+        // a mousemove — only for WebKitGTK embedders, preserving the "don't move
+        // the user's pointer" contract for every other target. Under pointer lock
+        // the browser recenters the OS pointer to its lock anchor each frame, so
+        // an absolute warp delivers only a fraction of the intended movementX
+        // (mouse_ratio ~0.3) — but it is UNBIASED, so the agent's closed-loop
+        // re-planning converges (score 0.6). Relative XTest motion (warp to
+        // anchor+dx) delivers full movementX but with a deterministic asymmetric
+        // recenter-counting bias that drifts yaw and breaks convergence (score
+        // 0.0) — see .auto/log.jsonl Exp5/Exp6, discarded.
         let mut structured = json!({});
         if let Some(pid) = args.opt_u64("pid") {
             if pid != 0 && is_webkitgtk_embedder(pid as u32) {
