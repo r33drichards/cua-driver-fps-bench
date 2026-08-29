@@ -79,9 +79,26 @@ def main() -> int:
         if r.get("operation_id"):
             print(json.dumps(wait_operation(r["operation_id"]), indent=2))
     elif a.cmd == "bind":
+        # pi-cua only honours a saved target that carries localCwd/remoteCwd, i.e. one
+        # whose workspace was prepared (clone of this repo's origin at the local commit
+        # + uncommitted overlay). Prepare it here (async backend op), then save.
+        repo = str(Path(__file__).resolve().parents[1])
+        r = call({
+            "action": "prepare_execution", "name": a.name, "source_cwd": repo,
+            "workspace_id": a.session_id, "tool_packages": ["npm:pi-autoresearch"],
+            "include_local_overlay": True,
+        })
+        if r.get("operation_id"):
+            st = wait_operation(r["operation_id"])
+            if st.get("state") != "succeeded":
+                raise SystemExit(f"prepare_execution failed: {json.dumps(st)[:800]}")
+            r = st.get("result") or {}
+        remote_cwd = r.get("remote_cwd")
+        if not isinstance(remote_cwd, str):
+            raise SystemExit(f"prepare_execution returned no remote_cwd: {json.dumps(r)[:800]}")
         print(json.dumps(call({
             "action": "set_execution_target", "session_id": a.session_id,
-            "target": {"kind": "sandbox", "name": a.name, "os": a.os},
+            "target": {"kind": "sandbox", "name": a.name, "os": a.os, "localCwd": repo, "remoteCwd": remote_cwd},
         })))
     elif a.cmd == "status":
         print(json.dumps(call({"action": "operation_status", "operation_id": a.operation_id}), indent=2))

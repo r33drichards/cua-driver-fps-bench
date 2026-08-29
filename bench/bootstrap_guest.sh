@@ -3,6 +3,8 @@
 # X11 desktop deps for bench_ui/pywebview, Rust deps for cua-driver, python deps.
 # Safe to run on every measure.sh invocation (fast when already done).
 set -euo pipefail
+# systemd-run / computer-server may not set HOME
+export HOME="${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}"
 STAMP="$HOME/.cache/fps-bench/bootstrap.v1"
 [ -f "$STAMP" ] && exit 0
 if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO=sudo; fi
