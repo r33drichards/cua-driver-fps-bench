@@ -51,4 +51,8 @@ EOF
 echo "session=$SESSION sandbox=$SANDBOX clone=$WS branch=$BRANCH log=$LOG"
 # UV_NO_PROJECT: pi-cua's backend re-execs itself with `uv run --python 3.11`; without
 # this it adopts the clone's pyproject (python>=3.12) and every repair/ensure fails.
-( cd "$WS" && UV_NO_PROJECT=1 pi --session-id "$SESSION" --name "autoresearch-$SANDBOX" --thinking high -p "$PROMPT" ) 2>&1 | tee "$LOG"
+# CUA_PI_LINUX_POOL: each sandbox lives in its own Fleet pool (see pi_sandbox.pool_for);
+# pi-cua's in-session backend calls must see the same pool name.
+POOL=$("$REPO_DIR/.venv/bin/python" -c "import sys; sys.path.insert(0,'$REPO_DIR/scripts'); import pi_sandbox; print(pi_sandbox.pool_for('$SANDBOX'))")
+echo "pool=$POOL"
+( cd "$WS" && UV_NO_PROJECT=1 CUA_PI_LINUX_POOL="$POOL" pi --session-id "$SESSION" --name "autoresearch-$SANDBOX" --thinking high -p "$PROMPT" ) 2>&1 | tee "$LOG"

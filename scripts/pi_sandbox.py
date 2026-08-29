@@ -26,12 +26,40 @@ BACKEND = Path(os.environ.get(
 ))
 
 
-def call(request: dict) -> dict:
+def pool_for(name: str) -> str:
+    """One Fleet pool per sandbox.
+
+    Fleet's reconcile_pool (what pi-cua's `create` calls) recreates the pool's
+    namespace, which kills every sandbox already living in that pool — only the
+    newest survives. Giving each sandbox its own pool makes parallel sandboxes safe.
+    Override with PI_CUA_POOL_PREFIX (default "cua-pi-linux-").
+    """
+    explicit = os.environ.get("CUA_PI_LINUX_POOL_FIXED")
+    if explicit:
+        return explicit
+    # An existing record wins (e.g. sandboxes created earlier in the shared pool).
+    try:
+        import sqlite3
+
+        con = sqlite3.connect(str(Path.home() / ".cua/pi-controller/state.sqlite3"))
+        row = con.execute("SELECT pool_name FROM sandboxes WHERE name = ?", (name,)).fetchone()
+        con.close()
+        if row and row[0]:
+            return row[0]
+    except Exception:
+        pass
+    return f"{os.environ.get('PI_CUA_POOL_PREFIX', 'cua-pi-linux-')}{name}"
+
+
+def call(request: dict, *, sandbox: str | None = None) -> dict:
+    env = dict(os.environ, UV_NO_PROJECT="1")
+    if sandbox:
+        env["CUA_PI_LINUX_POOL"] = pool_for(sandbox)
     # cwd must not be a uv project: the backend re-execs itself via `uv run --python 3.11`
     # and would otherwise adopt this repo's pyproject (python >=3.12) and fail.
     p = subprocess.run(
         ["python3", str(BACKEND), json.dumps(request)],
-        capture_output=True, text=True, cwd=str(Path.home()),
+        capture_output=True, text=True, cwd=str(Path.home()), env=env,
     )
     if p.returncode != 0:
         raise SystemExit(f"backend failed: {p.stderr.strip() or p.stdout.strip()}")
@@ -68,14 +96,14 @@ def main() -> int:
     if a.cmd == "list":
         print(json.dumps(call({"action": "list"}), indent=2))
     elif a.cmd == "create":
-        r = call({"action": "create", "os": a.os, "name": a.name})
+        r = call({"action": "create", "os": a.os, "name": a.name}, sandbox=a.name)
         print(json.dumps(r))
         if a.wait and r.get("operation_id"):
             st = wait_operation(r["operation_id"])
             print(json.dumps(st, indent=2))
             return 0 if st.get("state") == "succeeded" else 1
     elif a.cmd == "delete":
-        r = call({"action": "delete", "name": a.name})
+        r = call({"action": "delete", "name": a.name}, sandbox=a.name)
         print(json.dumps(r))
         if r.get("operation_id"):
             print(json.dumps(wait_operation(r["operation_id"]), indent=2))
@@ -88,7 +116,7 @@ def main() -> int:
             "action": "prepare_execution", "name": a.name, "source_cwd": repo,
             "workspace_id": a.session_id, "tool_packages": ["npm:pi-autoresearch"],
             "include_local_overlay": True,
-        })
+        }, sandbox=a.name)
         if r.get("operation_id"):
             st = wait_operation(r["operation_id"])
             if st.get("state") != "succeeded":
