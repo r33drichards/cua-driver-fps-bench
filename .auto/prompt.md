@@ -60,3 +60,47 @@ Useful diagnostics inside the sandbox (DISPLAY=:1):
   delivered; `xdotool mousemove` (XTest) → mousemove delivered. Conclusion: WebKitGTK
   ignores synthetic XSendEvent key events; XTest-style injection into the focused
   window works. press_key without pid/window fails with "No windows found for pid 0".
+- Harness gaps fixed on the remote tip (commits 52c521f / 815b8b0 / e795f84):
+  `measure.sh` now starts `cua-driver serve --dangerously-bypass-approvals` (the
+  `call` subcommand does NOT auto-spawn the daemon — without this every press_key
+  errors "daemon is not running"), exports XAUTHORITY, and builds on a 5G tmpfs
+  with CARGO_BUILD_JOBS=4 (the VM root disk is ~10 GB and the release build OOMs
+  the small Fleet VM if run naively). `bootstrap_guest.sh` grants the non-root
+  `cua` user X access (the XFCE desktop runs as root, so `cua` gets "Authorization
+  required / cannot open display :1" without an xauth copy + `xhost`).
+- Exp 1 (committed by a parallel agent from this session's patch): press_key
+  removes the `unavailable_webkit_keyboard_background` refusal and adds
+  `deliver_fg = delivery.is_foreground() || (!foreground && is_webkitgtk_embedder(pid))`
+  so WebKitGTK targets auto-escalate to the foreground XTest rung. **BUT this is
+  currently dead code**: the very next check, `unavailable_gtk_keyboard_background`,
+  fires for pywebview (WebKitGTK links libgtk → `is_gtk_process()` is true) and
+  returns a `background_unavailable` refusal BEFORE `deliver_fg` ever runs. So
+  press_key still errors out every call → delivery_ratio stays 0. Confirmed by
+  reading the handler; a live measurement is pending sandbox availability.
+- Exp 2 (this iteration): gate `unavailable_gtk_keyboard_background` on
+  `!is_webkit_target` (hoisted `is_webkitgtk_embedder(pid)` once). Now WebKitGTK
+  embedders skip the GTK refusal and fall through to the auto-escalation, so the
+  foreground XTest key actually fires. Plain (non-WebKit) GTK apps keep the
+  refusal. Minimal, unblocks the already-committed intent. Live measurement pending.
+- Exp 3 (this iteration): move_cursor default `scope=window` only moves the
+  synthetic overlay, so the page's PointerLockControls sees no mousemove
+  (mouse_ratio=0). Added: when the target pid is a WebKitGTK embedder, also inject
+  a REAL absolute XTest motion via `send_move_xtest_desktop(xi, yi)`. The agent
+  drives yaw with absolute screen coords whose per-step delta equals the intended
+  movementX, and after the focus click the real pointer sits at the agent's initial
+  cursor — so an absolute XTest move to (xi, yi) yields movementX = dx. Non-WebKit
+  targets keep the "don't move the user's pointer" contract. Live measurement
+  pending; risk: under Chromium/WebKitGTK pointer-lock, absolute XTest warps may
+  not produce the expected movementX delta (may need relative XTest motion instead).
+
+### Infrastructure blocker (2026-08-29)
+- The Fleet warm pool `cua-pi-linux-rw` started returning **403 Forbidden** for
+  `osgymsandboxwarmpools` (credentials/auth revoked), and VMs kept going offline
+  mid cargo-build (OOM/reclaim). A live VM (fps-b-2) was recovered via direct
+  Tailscale SSH; measurements are being retried there with CARGO_BUILD_JOBS=1.
+- The pi-cua controller's `backend.py` pinned `uv run --python 3.11` while
+  `cua-sandbox==0.3.4` now requires `>=3.12,<3.14` — patched locally to `3.12`
+  so `cua_sandbox ensure` can re-provision.
+- `bootstrap_guest.sh` does NOT pip-install `cua-bench` (only `cua-bench-ui` +
+  `pywebview`); `fps_bench/agent.py` imports `cua_bench.agents.base`. Provisioning
+  must `pip install cua-bench` after bootstrap (done manually per VM).

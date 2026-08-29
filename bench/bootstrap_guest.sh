@@ -16,7 +16,8 @@ $SUDO apt-get install -y -qq --no-install-recommends \
   libx11-dev libxi-dev libxtst-dev libxext-dev libwayland-dev libxkbcommon-dev \
   python3-gi gir1.2-webkit2-4.1 gir1.2-gtk-3.0 python3-pip python3-psutil xdotool >/dev/null
 
-python3 -m pip install --break-system-packages --quiet cua-bench-ui pywebview
+# cua-bench: fps_bench/agent.py imports cua_bench.agents.base (BaseAgent).
+python3 -m pip install --break-system-packages --quiet cua-bench-ui pywebview "cua-bench==0.2.11"
 
 # The desktop (Xtigervnc :1) runs as root with /root/.Xauthority; let this user
 # open windows on it (pywebview/bench_ui + cua-driver run as this user).
