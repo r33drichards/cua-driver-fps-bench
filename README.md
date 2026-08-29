@@ -1,11 +1,12 @@
 # fps-bench — first-person movement benchmark for cua-driver
 
-A cua-bench task (three.js L-shaped platform, "did the player reach the goal?"),
-a minimal agent that plays it purely through `cua-driver call …`, a Fleet image
-with the cua-driver source pre-cloned, and an autoresearch loop that patches
-cua-driver in parallel Fleet sandboxes to hill-climb the score.
+A benchmark that measures how reliably cua-driver delivers mouse and keyboard
+input to a three.js first-person game (mouse look, WASD, Space) on a Linux
+desktop: reach the goal at the far end of an L-shaped platform. A minimal agent
+acts only through `cua-driver call …`, and a pi-autoresearch loop patches the
+vendored cua-driver source on parallel CUA Fleet sandboxes to raise the score.
 
-Design: `docs/plans/2026-08-29-fps-cua-driver-bench-design.md`.
+Brief: `docs/BRIEF.md`. Design: `docs/plans/2026-08-29-fps-cua-driver-bench-design.md`.
 
 ## Setup
 
