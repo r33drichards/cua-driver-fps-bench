@@ -58,7 +58,32 @@ image/build.sh        # buildx linux/amd64 → 296062593712.dkr.ecr.us-west-2.am
 Fleet's pool admission only allows a fixed set of image repositories, which is why
 the tag lands in `cua-gymdriver-dev`. Pools use `runtime = gvisor` (plain container).
 
-## Autoresearch
+## Autoresearch with pi-cua + pi-autoresearch (primary loop)
+
+The loop is driven by [pi](https://github.com/earendil-works/pi) with two extensions:
+[pi-cua](https://github.com/injaneity/pi-cua) executes pi's tools on a CUA Fleet Linux
+sandbox whose workspace is synced from this repo's origin, and
+[pi-autoresearch](https://github.com/davebcn87/pi-autoresearch) runs the
+try → measure → keep/revert loop (`init_experiment` / `run_experiment` / `log_experiment`).
+
+* `cua-driver/` — vendored cua-driver source (trycua/cua `libs/cua-driver`, ref in `cua-driver/UPSTREAM_REF`); the files pi edits.
+* `.auto/prompt.md`, `.auto/measure.sh`, `.auto/config.json` — the pi-autoresearch session.
+  `measure.sh` bootstraps guest deps (`bench/bootstrap_guest.sh`), rebuilds cua-driver,
+  runs `bench/run_in_sandbox.py` on the sandbox's X display and prints `METRIC score=…`.
+* `scripts/pi_sandbox.py` — headless wrapper over the pi-cua backend (`create/list/delete/bind`).
+* `scripts/pi_autoresearch.sh <sandbox> [iterations]` — pins a fresh pi session to a sandbox
+  and runs the loop non-interactively; run one per sandbox for parallel hill-climbs.
+
+```bash
+pi install npm:pi-autoresearch                       # once (pi-cua already installed)
+.venv/bin/python scripts/pi_sandbox.py create fps-a --wait
+.venv/bin/python scripts/pi_sandbox.py create fps-b --wait
+scripts/pi_autoresearch.sh fps-a 20 & scripts/pi_autoresearch.sh fps-b 20 & wait
+```
+
+Interactive alternative: `pi` → `/sandbox fps-a` → `/autoresearch raise cua-driver key delivery score`.
+
+## Autoresearch with the standalone Fleet loop (alternative)
 
 ```bash
 .venv/bin/python scripts/fleet_smoke.py --image <image> --pool fps-bench-smoke --bench   # 1 sandbox, 1 episode
