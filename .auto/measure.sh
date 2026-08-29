@@ -17,9 +17,9 @@ bash bench/bootstrap_guest.sh
 # build lean: no debug info, no incremental caches.
 export CARGO_TARGET_DIR=/mnt/fps-target
 if ! mountpoint -q "$CARGO_TARGET_DIR" 2>/dev/null; then
-  sudo mkdir -p "$CARGO_TARGET_DIR" && sudo mount -t tmpfs -o size=7G,mode=0777 tmpfs "$CARGO_TARGET_DIR"
+  sudo mkdir -p "$CARGO_TARGET_DIR" && sudo mount -t tmpfs -o size=5G,mode=0777 tmpfs "$CARGO_TARGET_DIR"
 fi
-export CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_PROFILE_RELEASE_STRIP=true CARGO_INCREMENTAL=0
+export CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_PROFILE_RELEASE_STRIP=true CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-4}
 
 # Fast pre-check, then release build (incremental after the first run).
 ( cd cua-driver/rust && cargo check -q -p cua-driver && cargo build -q --release -p cua-driver )

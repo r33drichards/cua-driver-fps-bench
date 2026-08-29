@@ -35,7 +35,7 @@ fi
 TARGET_DIR=/mnt/fps-target
 if ! mountpoint -q "$TARGET_DIR" 2>/dev/null; then
   $SUDO mkdir -p "$TARGET_DIR"
-  $SUDO mount -t tmpfs -o size=7G,mode=0777 tmpfs "$TARGET_DIR"
+  $SUDO mount -t tmpfs -o size=5G,mode=0777 tmpfs "$TARGET_DIR"
 fi
 # Reclaim root-owned toolchains left by other bootstrap paths (the build runs as this user).
 $SUDO rm -rf /root/.rustup /root/.cargo 2>/dev/null || true

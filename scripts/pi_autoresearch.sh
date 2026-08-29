@@ -49,4 +49,6 @@ EOF
 )
 
 echo "session=$SESSION sandbox=$SANDBOX clone=$WS branch=$BRANCH log=$LOG"
-( cd "$WS" && pi --session-id "$SESSION" --name "autoresearch-$SANDBOX" --thinking high -p "$PROMPT" ) 2>&1 | tee "$LOG"
+# UV_NO_PROJECT: pi-cua's backend re-execs itself with `uv run --python 3.11`; without
+# this it adopts the clone's pyproject (python>=3.12) and every repair/ensure fails.
+( cd "$WS" && UV_NO_PROJECT=1 pi --session-id "$SESSION" --name "autoresearch-$SANDBOX" --thinking high -p "$PROMPT" ) 2>&1 | tee "$LOG"
