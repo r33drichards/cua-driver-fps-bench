@@ -42,7 +42,7 @@ git -C "$WS" checkout -q -b "$BRANCH"
 
 # 4. Pin the (not yet created) session to the sandbox; prepares the remote workspace.
 BIND=$("$PY" "$REPO_DIR/scripts/pi_sandbox.py" bind "$SESSION" "$SANDBOX" --os linux --repo "$WS")
-REMOTE_CWD=$(printf '%s' "$BIND" | python3 -c 'import json,sys; print(json.load(sys.stdin)["target"]["remoteCwd"])')
+REMOTE_CWD=$(printf '%s\n' "$BIND" | tail -n 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["target"]["remoteCwd"])')
 POOL=$("$PY" -c "import sys; sys.path.insert(0,'$REPO_DIR/scripts'); import pi_sandbox; print(pi_sandbox.pool_for('$SANDBOX'))")
 
 PROMPT=$(cat <<EOF
