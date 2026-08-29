@@ -94,6 +94,44 @@ diff and produces a full replacement diff against the pinned `CUA_REF`). Build o
 apply failures are recorded as score −1 and never become best. Every run also
 records the raw per-episode data so regressions can be inspected later.
 
+## Primary loop: pi + pi-cua + pi-autoresearch (added 2026-08-29)
+
+Per the user's direction the agent loop is pi with two extensions rather than the
+custom Claude loop above (which stays as an alternative in `fps_bench/autoresearch.py`):
+
+* **pi-cua** pins a pi session to a Fleet Linux sandbox; every tool call (bash,
+  edit, …) runs there in a workspace cloned from this repo's origin at the local
+  commit plus an uncommitted overlay. That is why the repo is pushed to
+  `github.com/r33drichards/cua-driver-fps-bench` and why `cua-driver/` is
+  **vendored** (a plain copy of `libs/cua-driver/rust` at `cua-driver/UPSTREAM_REF`)
+  instead of pre-cloned in an image: pi-autoresearch's keep/revert is git-based
+  and the sandbox sees exactly the repo.
+* **pi-autoresearch** owns the hill-climb: `.auto/prompt.md` (objective, metrics,
+  files in scope), `.auto/measure.sh` (bootstrap guest → `cargo build --release`
+  → `bench/run_in_sandbox.py` → `METRIC score=…`), `.auto/log.jsonl`.
+* Parallelism = one pi session per sandbox (`scripts/pi_autoresearch.sh <sandbox>`),
+  each an independent hill-climb on its own branch; results are merged by hand
+  (or with `scripts/pi_collect.sh`, to be written once a session has run).
+* Headless driving: `scripts/pi_sandbox.py` wraps the pi-cua backend CLI
+  (`create` is an async operation; `bind` writes the session→sandbox mapping the
+  extension reads at `session_start`), then `pi --session-id … -p "<prompt>"`.
+
+## Fleet findings (2026-08-29, from the fleet-debug subagent)
+
+* **gVisor container pools are admitted but unusable today**: the pool operator
+  builds the pod with `resources: {}` (BestEffort), and the host recycles
+  BestEffort runsc sandboxes ~80 s after start → CrashLoopBackOff. Fix belongs in
+  `cloud/osgym/pool-operator/pod_backend.py` (map `cpuCores`/`memory` to
+  requests/limits). Until then `image/Dockerfile` (the pre-cloned image, pushed to
+  `cua-gymdriver-dev`) cannot be scheduled through Fleet.
+* **KubeVirt VM pools were unschedulable during the session** ("0/28 nodes
+  available: Insufficient memory/cpu"; autoscaler did not add nodes in 25 min),
+  which is also why pi-cua's `create fps-a` timed out. The VM path
+  (`fleet.ensure_vm_pool` + `ensure_bootstrapped`) is the one to use once
+  capacity returns.
+* Diagnosis recipe: `scripts/fleet_probe.py` (gateway k8s proxy: pods, pod logs,
+  VMIs, osgymsandboxes) and `scripts/fleet_status.py <pool>`.
+
 ## Non-goals (YAGNI)
 
 * Mouse-look / pointer lock — cua-driver has no hold-to-move or relative mouse
