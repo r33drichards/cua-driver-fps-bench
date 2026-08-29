@@ -68,6 +68,9 @@ async def amain(args: argparse.Namespace) -> int:
     session = LocalSession(display=args.display)
     agent = CuaDriverAgent(max_presses=args.max_presses)
     version = await session.run_command(f"{agent_mod.DRIVER_BIN} --version", check=False)
+    # Stale game windows from earlier runs would be matched by title; kill them first.
+    await session.run_command("pkill -f bench_ui.child || true", check=False)
+    await asyncio.sleep(0.5)
     pid = await session.launch_window(
         html=task_module.game_html(), title=task_module.WINDOW_TITLE,
         width=task_module.WINDOW_W, height=task_module.WINDOW_H,
