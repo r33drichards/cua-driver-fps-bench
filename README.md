@@ -20,8 +20,9 @@ Fleet credentials come from the macOS Keychain entry `cua-sandbox-fleet-api`
 
 ## Task
 
-`tasks/fps_lshape/` — `main.py` + `gui/index.html`. Keys: `W/S` step, `A/D` strafe,
-`←/→` turn 15°. `evaluate()` → `[reached, progress]`.
+`tasks/fps_lshape/` — `main.py` + `gui/index.html` (three.js r147 + `PointerLockControls`,
+vendored). Controls: mouse look, `W/A/S/D` move (each keydown also moves 0.5 units so
+tap-only drivers work), `Space` jump. `evaluate()` → `[reached, progress]`.
 
 ```bash
 .venv/bin/cb interact tasks/fps_lshape --oracle --no-wait      # oracle solves it via window.__press
@@ -41,9 +42,10 @@ FPS_BENCH_IMAGE=fps-bench-cua-driver:local .venv/bin/python -m fps_bench.runner 
 ## Agent
 
 `fps_bench/agent.py` — `CuaDriverAgent`. Reads `window.__state` (privileged
-perception), sends every key with `cua-driver call press_key` executed inside the
-environment, re-plans after each press. Per-episode record includes presses sent vs
-keydowns the page saw (`delivery_ratio`).
+perception); acts only through cua-driver inside the environment: `move_cursor` to
+turn (relative mouse motion drives PointerLockControls), `press_key w` to walk, a
+`click` first to focus/lock. Re-plans after every action. Per-episode record includes
+presses vs keydowns seen (`delivery_ratio`) and mouse pixels sent vs seen (`mouse_ratio`).
 
 ## Fleet image
 

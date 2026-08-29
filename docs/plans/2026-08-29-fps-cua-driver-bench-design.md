@@ -24,11 +24,14 @@ Fleet sandboxes in parallel.
 
 * L-shaped platform: short leg 3×8 (start at its far end, facing the corner),
   long leg 3×16 along +X from the corner, glowing goal at its far end.
-* Discrete controls so a press-and-release driver can play it: `W/S` move one
-  unit, `A/D` strafe, `←/→` (or `Q/E`) turn 15°. Stepping off the platform
-  resets to the start and counts a fall.
-* State is exposed at `window.__state` (`x, z, heading, reached, falls,
-  keydowns, keys{}`) and `window.__progress()`; `window.__press(key)` drives the
+* Controls: mouse look via three.js `PointerLockControls` (vendored r147; a
+  no-lock fallback feeds `movementX/Y` into the same controls object), `W/A/S/D`
+  move (held-key velocity plus a 0.5-unit step per keydown so press-and-release
+  drivers still move), `Space` jump. Stepping off the platform resets to the
+  start and counts a fall.
+* State is exposed at `window.__state` (`x, z, yaw, reached, falls, keydowns,
+  mousemoves, mouse_dx, locked, keys{}`) and `window.__progress()`;
+  `window.__press(key)` / `window.__look(deg)` drive the
   same code path for the oracle.
 * three.js is vendored (`gui/three.min.js`) and inlined by `main.py` because the
   desktop has no internet.
@@ -134,7 +137,8 @@ custom Claude loop above (which stays as an alternative in `fps_bench/autoresear
 
 ## Non-goals (YAGNI)
 
-* Mouse-look / pointer lock — cua-driver has no hold-to-move or relative mouse
-  primitive; discrete keys keep the benchmark about key delivery.
+* Gamepad / touch input — mouse (PointerLockControls) + keyboard are the only
+  paths under test. (Mouse-look was added on 2026-08-29 at the user's request;
+  the earlier discrete-turn keys are gone.)
 * Training data / traces — the benchmark is a scalar score plus JSON.
 * Windows / macOS pools.
