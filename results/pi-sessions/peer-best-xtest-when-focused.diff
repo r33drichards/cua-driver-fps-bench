@@ -1,0 +1,41 @@
+diff --git a/libs/cua-driver/rust/crates/platform-linux/src/input/mod.rs b/libs/cua-driver/rust/crates/platform-linux/src/input/mod.rs
+index 937755500..29d299dcf 100644
+--- a/libs/cua-driver/rust/crates/platform-linux/src/input/mod.rs
++++ b/libs/cua-driver/rust/crates/platform-linux/src/input/mod.rs
+@@ -2500,6 +2500,20 @@ pub fn send_drag_xtest_desktop(
+ 
+ /// Send a named key press to a window.
+ pub fn send_key(xid: u64, key: &str, modifiers: &[&str]) -> Result<()> {
++    // XTEST is accepted by browsers and resolves the key through the server's
++    // active keymap. It is safe for background mode when this exact target
++    // already owns focus because no activation or focus change is required.
++    let display = open_display().ok();
++    let target_is_focused = display
++        .map(|display| {
++            let focused = x11_focus_is_within(display, xid as x11::xlib::Window);
++            unsafe { x11::xlib::XCloseDisplay(display) };
++            focused
++        })
++        .unwrap_or(false);
++    if target_is_focused {
++        return send_key_xtest(key, modifiers);
++    }
+     send_key_to_target(xid, None, key, modifiers)
+ }
+ 
+diff --git a/libs/cua-driver/rust/crates/platform-linux/src/tools/impl_.rs b/libs/cua-driver/rust/crates/platform-linux/src/tools/impl_.rs
+index 9b509284a..e6b5bc02b 100644
+--- a/libs/cua-driver/rust/crates/platform-linux/src/tools/impl_.rs
++++ b/libs/cua-driver/rust/crates/platform-linux/src/tools/impl_.rs
+@@ -3683,9 +3683,8 @@ impl Tool for PressKeyTool {
+         if let Some(refusal) = unavailable_webkit_keyboard_background(pid, delivery) {
+             return refusal;
+         }
+-        if let Some(refusal) = unavailable_gtk_keyboard_background(pid, delivery) {
+-            return refusal;
+-        }
++        // Firefox links GTK but accepts trusted XTEST keys when its requested
++        // window already owns focus; input::send_key selects that safe route.
+         if let Some(refusal) = unavailable_wayland_focused_input_background(delivery, true) {
+             return refusal;
+         }

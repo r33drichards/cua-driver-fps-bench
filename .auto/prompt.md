@@ -51,6 +51,16 @@ Useful diagnostics inside the sandbox (DISPLAY=:1):
   ("background") contract as the default and only escalate to a foreground/XTest
   path when the background path provably cannot land.
 
+## Known-good idea from a sibling loop (2026-08-29, Chromium variant, gVisor pool)
+`results/pi-sessions/peer-best-xtest-when-focused.diff` reached score 1.0 (from 0.0)
+on a Chromium build of this game: in `platform-linux/src/input/mod.rs::send_key`,
+if `x11_focus_is_within(display, xid)` already holds, route through `send_key_xtest`
+(no activation, still "background"); and drop the blanket
+`unavailable_gtk_keyboard_background` refusal in `PressKeyTool`. Keys already land on
+this WebKitGTK build (delivery_ratio 1.0 on main), so the open problem here is
+`move_cursor` → real pointer motion (`mouse_ratio`); apply the same "when the target
+owns focus, use XTest" idea to pointer motion.
+
 ## What's Been Tried
 - 2026-08-29 baseline (stock cua-driver 0.4.2 on a Fleet Ubuntu 24.04 VM, XFCE on
   Xtigervnc :1, pywebview/WebKitGTK window): score 0.00, delivery_ratio 0.00 over
