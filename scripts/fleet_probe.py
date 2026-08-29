@@ -41,6 +41,21 @@ def get(tok: str, path: str, limit: int = 1500):
         return "ERR", repr(e)[:300]
 
 
+def call(tok: str, method: str, path: str, body=None, limit: int = 1500):
+    data = json.dumps(body).encode() if body is not None else None
+    r = urllib.request.Request(
+        BASE + path, data=data, method=method,
+        headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"},
+    )
+    try:
+        resp = urllib.request.urlopen(r, timeout=25)
+        return resp.status, resp.read()[:limit]
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()[:limit]
+    except Exception as e:  # noqa: BLE001
+        return "ERR", repr(e)[:300]
+
+
 if __name__ == "__main__":
     tok = token()
     for p in sys.argv[1:]:

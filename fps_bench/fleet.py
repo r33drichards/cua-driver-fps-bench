@@ -62,7 +62,16 @@ async def ensure_pool(
     initial_size: int = 2,
     max_size: int = 8,
 ) -> Any:
-    """Reconcile a gVisor-runtime pool (and its template) for ``image``; returns cua_sandbox.Pool."""
+    """Reconcile a gVisor-runtime pool (and its template) for ``image``; returns cua_sandbox.Pool.
+
+    BLOCKED as of 2026-08-29: the osgym pool-operator's pod backend
+    (cloud/osgym/pool-operator/pod_backend.py) renders gVisor pods with no
+    ``resources``, so they land in BestEffort QoS and the host runsc sandbox is
+    recycled (SIGTERM to pid 1) every ~60-90 s — the container CrashLoopBackOffs
+    and the OSGymSandbox never reports Ready. cpuCores/memory in the template
+    are ignored for pod runtimes and tenants cannot add a LimitRange through the
+    gateway. Use ensure_vm_pool() until the operator sets container resources.
+    """
     from cua_sandbox.pool import Pool, Template
     from fleet_sdk import (
         CreatePoolRequestBuilder,
@@ -148,22 +157,114 @@ async def release(sb: Any) -> None:
         print(f"[fleet] release failed for {getattr(sb, 'claim_name', '?')}: {e!r}", flush=True)
 
 
+VM_IMAGE = os.environ.get(
+    "FPS_BENCH_VM_IMAGE", "public.ecr.aws/k5j5w0x5/cua-ubuntu-24.04:main-38352d34"
+)
+BOOTSTRAP_STAMP = "/opt/fps-bench/bootstrap.done"
+
+
+async def ensure_vm_pool(
+    image: str = VM_IMAGE,
+    *,
+    name: str = DEFAULT_POOL,
+    cpu: int = 4,
+    memory_mb: int = 8192,
+    min_size: int = 0,
+    initial_size: int = 2,
+    max_size: int = 8,
+) -> Any:
+    """Reconcile a KubeVirt VM pool (the path that works today; see ensure_pool docstring)."""
+    from cua_sandbox import Image, WarmPoolAutoscaling
+    from cua_sandbox.pool import Pool
+
+    last_error: Exception | None = None
+    for attempt in range(12):
+        try:
+            return await Pool.apply(
+                Image.from_registry(image, os_type="linux", kind="vm"),
+                name=name, cpu=cpu, memory_mb=memory_mb, services={"server": 8000},
+                autoscaling=WarmPoolAutoscaling(
+                    min_pool_size=min_size, initial_pool_size=initial_size, max_pool_size=max_size
+                ),
+            )
+        except Exception as e:
+            last_error = e
+            text = repr(e)
+            if "NamespaceTerminating" in text or "status=403" in text or "not allowed" in text:
+                print(f"[fleet] pool {name} reconcile attempt {attempt + 1} failed transiently: {text[:160]}", flush=True)
+                await asyncio.sleep(10)
+                continue
+            raise
+    raise RuntimeError(f"pool {name} did not reconcile: {last_error!r}")
+
+
+def bootstrap_script(cua_ref: str) -> str:
+    """Idempotent VM bootstrap: build deps, bench_ui, Rust, sparse clone of cua-driver, first build.
+
+    Mirrors what image/Dockerfile bakes in for the container image; on the VM
+    path it runs once per sandbox (≈10-15 min) and stamps BOOTSTRAP_STAMP.
+    """
+    return f"""set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup
+export PATH=/usr/local/cargo/bin:$PATH
+mkdir -p /opt/fps-bench
+if ! command -v cargo >/dev/null 2>&1; then
+  apt-get update -qq
+  apt-get install -y --no-install-recommends build-essential pkg-config git ca-certificates curl \\
+    libx11-dev libxi-dev libxtst-dev libxext-dev libwayland-dev libxkbcommon-dev \\
+    python3-gi gir1.2-webkit2-4.1 gir1.2-gtk-3.0 python3-pip xdotool
+  curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain 1.97.1 --profile minimal
+fi
+python3 -c 'import bench_ui' 2>/dev/null || python3 -m pip install --break-system-packages --no-cache-dir cua-bench-ui pywebview
+if [ ! -d {CUA_DRIVER_SRC} ]; then
+  git clone --filter=blob:none --sparse https://github.com/trycua/cua.git /opt/cua
+  cd /opt/cua && git sparse-checkout set libs/cua-driver && git checkout --detach {cua_ref}
+fi
+cd {CUA_DRIVER_SRC}/rust && cargo build --release -p cua-driver
+install -m 0755 target/release/cua-driver /usr/local/bin/cua-driver
+cua-driver --version
+touch {BOOTSTRAP_STAMP}
+echo BOOTSTRAP_OK
+"""
+
+
+async def ensure_bootstrapped(sb: Any, cua_ref: str, *, timeout: float = 2400) -> str:
+    """Run bootstrap_script once per sandbox (no-op when the stamp exists)."""
+    r = await sb.shell.run(f"test -f {BOOTSTRAP_STAMP} && echo DONE || echo NEED", timeout=15)
+    if "DONE" in (r.stdout or ""):
+        return "already bootstrapped"
+    rc, log = await run_detached(sb, bootstrap_script(cua_ref), name="bootstrap", timeout=timeout, poll=15)
+    if rc != 0 or "BOOTSTRAP_OK" not in log:
+        raise RuntimeError(f"bootstrap failed rc={rc}: {log[-2000:]}")
+    return log[-300:]
+
+
 async def run_detached(sb: Any, script: str, *, name: str, timeout: float, poll: float = 5.0) -> tuple[int, str]:
     """Run a long shell script in the sandbox and poll for completion.
 
-    The Fleet exec gateway drops any single run_command after ~30 s, so the job
-    is started with nohup/setsid and polled through short commands.
+    The Fleet exec gateway drops any single run_command after ~30 s, and the
+    guest command server rejects commands that leave a backgrounded child, so
+    the job is detached through systemd-run (falling back to setsid/nohup) and
+    polled with short commands — the same contract pi-cua uses.
     """
     base = f"/tmp/fps-job-{name}"
+    unit = f"fps-{name}"
     await sb.files.write_text(f"{base}.sh", script)
+    sudo = 'if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO=sudo; fi; '
     launch = (
-        f"rm -f {base}.rc; setsid nohup bash -c 'bash {base}.sh >{base}.log 2>&1; echo $? >{base}.rc' "
-        f">/dev/null 2>&1 < /dev/null & echo started"
+        sudo + f"$SUDO systemctl stop {unit}.service 2>/dev/null; $SUDO systemctl reset-failed {unit}.service 2>/dev/null; "
+        f"rm -f {base}.rc {base}.log; "
+        f"$SUDO systemd-run --collect --unit={unit} sh -c 'bash {base}.sh >{base}.log 2>&1; echo $? >{base}.rc' && echo started"
     )
     res = await sb.shell.run(launch, timeout=20)
     if res.returncode != 0 or "started" not in (res.stdout or ""):
-        # Some guests reject backgrounded children from run_command; fall back to the pty path.
-        await sb.shell.run(f"bash -c 'bash {base}.sh >{base}.log 2>&1; echo $? >{base}.rc'", background=True)
+        fallback = (
+            f"rm -f {base}.rc; setsid nohup bash -c 'bash {base}.sh >{base}.log 2>&1; echo $? >{base}.rc' "
+            f">/dev/null 2>&1 < /dev/null & echo started"
+        )
+        res = await sb.shell.run(fallback, timeout=20)
+        if res.returncode != 0 or "started" not in (res.stdout or ""):
+            await sb.shell.run(f"bash -c 'bash {base}.sh >{base}.log 2>&1; echo $? >{base}.rc'", background=True)
     t0 = time.monotonic()
     while time.monotonic() - t0 < timeout:
         r = await sb.shell.run(f"cat {base}.rc 2>/dev/null || echo RUNNING", timeout=15)
