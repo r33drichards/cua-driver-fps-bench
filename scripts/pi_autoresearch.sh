@@ -49,6 +49,8 @@ $WS on branch $BRANCH. Follow the autoresearch-create skill:
    EPISODES=5 before keeping. Stop after ${ITER} experiments or when .auto/config.json maxIterations hits.
 4. Keep .auto/prompt.md "What's Been Tried" updated. After every keep, run: git push -u origin $BRANCH
 5. Never ask questions; keep going. When done, push the branch and print a 10-line summary.
+6. NEVER create, delete, repair or "clean up" sandboxes (no cua_sandbox tool use); other
+   sessions own the other sandboxes. If the sandbox becomes unreachable, stop and report.
 EOF
 )
 
@@ -59,4 +61,6 @@ echo "session=$SESSION sandbox=$SANDBOX clone=$WS branch=$BRANCH log=$LOG"
 # pi-cua's in-session backend calls must see the same pool name.
 POOL=$("$REPO_DIR/.venv/bin/python" -c "import sys; sys.path.insert(0,'$REPO_DIR/scripts'); import pi_sandbox; print(pi_sandbox.pool_for('$SANDBOX'))")
 echo "pool=$POOL"
-( cd "$WS" && UV_NO_PROJECT=1 CUA_PI_LINUX_POOL="$POOL" pi --session-id "$SESSION" --name "autoresearch-$SANDBOX" --thinking high -p "$PROMPT" ) 2>&1 | tee "$LOG"
+# -xt cua_sandbox: the agent must never create/delete/repair sandboxes — an earlier run
+# "cleaned up stray sandboxes" that belonged to parallel sessions.
+( cd "$WS" && UV_NO_PROJECT=1 CUA_PI_LINUX_POOL="$POOL" pi --session-id "$SESSION" --name "autoresearch-$SANDBOX" --thinking high -xt cua_sandbox -p "$PROMPT" ) 2>&1 | tee "$LOG"

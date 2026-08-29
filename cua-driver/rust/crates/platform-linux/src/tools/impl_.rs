@@ -3686,10 +3686,20 @@ impl Tool for PressKeyTool {
         // auto-escalate to the foreground XTest rung below (`deliver_fg`), which
         // activates the target, injects a *real* XTest key, and restores prior
         // focus. The prompt sanctions this escalation precisely because the
-        // background path provably cannot land. The GTK and Wayland-focused
-        // refusals stay.
+        // background path provably cannot land.
+        //
+        // Compute the WebKitGTK flag once: it gates the GTK refusal (a plain
+        // GTK app is still refused background; a WebKitGTK embedder is escalated
+        // instead) AND the `deliver_fg` auto-escalation below. Without this
+        // gate, `unavailable_gtk_keyboard_background` would fire for pywebview
+        // (WebKitGTK links libgtk → is_gtk_process() is true) and return a
+        // refusal before `deliver_fg` ever runs — making the auto-escalation
+        // dead code and every press_key still error out.
+        let is_webkit_target = is_webkitgtk_embedder(pid);
         if let Some(refusal) = unavailable_gtk_keyboard_background(pid, delivery) {
-            return refusal;
+            if !is_webkit_target {
+                return refusal;
+            }
         }
         if let Some(refusal) = unavailable_wayland_focused_input_background(delivery, true) {
             return refusal;
@@ -3813,7 +3823,7 @@ impl Tool for PressKeyTool {
         // synthetic-XSendEvent background path is silently dropped, so a plain
         // `send_key` here would deliver nothing. Real XTest input to the
         // activated window is the only route that lands.
-        let auto_foreground = !delivery.is_foreground() && is_webkitgtk_embedder(pid);
+        let auto_foreground = !delivery.is_foreground() && is_webkit_target;
         let deliver_fg = delivery.is_foreground() || auto_foreground;
         let result = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
             if resolved_element_index.is_none()
@@ -6796,9 +6806,43 @@ impl Tool for MoveCursorTool {
         // Use the acknowledged animation path so a first-ever move seeds and
         // displays the session cursor just as reliably as a coordinate click.
         reveal_pointer_action_for(&self.state, &cursor_id, x, y, false).await;
+        // WebKitGTK (pywebview) ignores the synthetic overlay for input purposes:
+        // the page's PointerLockControls only sees REAL mousemove events, so the
+        // default scope=window path delivers nothing there (mouse_ratio=0 in the
+        // baseline). The agent drives yaw with absolute screen coords whose step
+        // delta equals the intended movementX, and after the focus click the real
+        // pointer sits at the agent's initial cursor — so an absolute XTest move
+        // to (xi, yi) produces movementX = (xi - prev_real_x) = the agent's dx.
+        // Inject that real motion ONLY for WebKitGTK embedders, preserving the
+        // "don't move the user's pointer" contract for every other target.
+        let mut structured = json!({});
+        if let Some(pid) = args.opt_u64("pid") {
+            if pid != 0 && is_webkitgtk_embedder(pid as u32) {
+                let xi = x.round() as i32;
+                let yi = y.round() as i32;
+                let injected = tokio::task::spawn_blocking(move || {
+                    crate::input::send_move_xtest_desktop(xi, yi)
+                })
+                .await;
+                match injected {
+                    Ok(Ok(())) => {
+                        structured = json!({"real_motion": "xtest_desktop", "x": xi, "y": yi });
+                    }
+                    Ok(Err(e)) => {
+                        return ToolResult::error(format!(
+                            "move_cursor real-motion injection failed: {e}"
+                        ));
+                    }
+                    Err(e) => {
+                        return ToolResult::error(format!("Task error: {e}"));
+                    }
+                }
+            }
+        }
         ToolResult::text(format!(
             "Agent cursor '{cursor_id}' moved to ({x:.1}, {y:.1}); the user pointer was unchanged."
         ))
+        .with_structured(structured)
     }
 }
 
