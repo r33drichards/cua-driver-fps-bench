@@ -18,6 +18,13 @@ $SUDO apt-get install -y -qq --no-install-recommends \
 
 python3 -m pip install --break-system-packages --quiet cua-bench-ui pywebview
 
+# The desktop (Xtigervnc :1) runs as root with /root/.Xauthority; let this user
+# open windows on it (pywebview/bench_ui + cua-driver run as this user).
+if [ "$(id -u)" -ne 0 ]; then
+  $SUDO env DISPLAY=:1 XAUTHORITY=/root/.Xauthority xhost "+SI:localuser:$(id -un)" >/dev/null 2>&1 || \
+    { $SUDO cp /root/.Xauthority "$HOME/.Xauthority" && $SUDO chown "$(id -un)" "$HOME/.Xauthority"; }
+fi
+
 # rustup exists from pi-cua bootstrap (1.88); cua-driver pins its toolchain via rust-toolchain.toml.
 if ! command -v cargo >/dev/null 2>&1; then
   curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path

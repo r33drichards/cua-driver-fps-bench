@@ -3680,9 +3680,14 @@ impl Tool for PressKeyTool {
             return refusal;
         }
 
-        if let Some(refusal) = unavailable_webkit_keyboard_background(pid, delivery) {
-            return refusal;
-        }
+        // WebKitGTK (pywebview) provably drops synthetic XSendEvent key events —
+        // the background keyboard path cannot land there. Instead of refusing
+        // with a `background_unavailable` error the caller may not act on,
+        // auto-escalate to the foreground XTest rung below (`deliver_fg`), which
+        // activates the target, injects a *real* XTest key, and restores prior
+        // focus. The prompt sanctions this escalation precisely because the
+        // background path provably cannot land. The GTK and Wayland-focused
+        // refusals stay.
         if let Some(refusal) = unavailable_gtk_keyboard_background(pid, delivery) {
             return refusal;
         }
@@ -3804,7 +3809,12 @@ impl Tool for PressKeyTool {
         // Foreground delivery is one atomic activate-and-XTest transaction.
         // A preceding PX click establishes internal widget focus, but that
         // click restores the prior top-level before returning.
-        let deliver_fg = delivery.is_foreground();
+        // Auto-escalate WebKitGTK embedders to the foreground XTest rung: their
+        // synthetic-XSendEvent background path is silently dropped, so a plain
+        // `send_key` here would deliver nothing. Real XTest input to the
+        // activated window is the only route that lands.
+        let auto_foreground = !delivery.is_foreground() && is_webkitgtk_embedder(pid);
+        let deliver_fg = delivery.is_foreground() || auto_foreground;
         let result = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
             if resolved_element_index.is_none()
                 && mods.is_empty()
