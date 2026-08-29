@@ -1,0 +1,22 @@
+[project]
+name = "fps-bench"
+version = "0.1.0"
+description = "First-person movement benchmark for cua-driver (cua-bench task + Fleet autoresearch loop)"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "cua-bench[browser]==0.2.11",
+    "cua-sandbox>=0.4.3",
+    "anthropic>=0.60.0",
+]
+
+[tool.uv]
+extra-index-url = ["https://wheels.cua.ai/simple"]
+
+[tool.uv.sources]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["fps_bench"]

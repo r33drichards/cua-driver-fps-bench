@@ -1,0 +1,70 @@
+# fps-bench — first-person movement benchmark for cua-driver
+
+A cua-bench task (three.js L-shaped platform, "did the player reach the goal?"),
+a minimal agent that plays it purely through `cua-driver call …`, a Fleet image
+with the cua-driver source pre-cloned, and an autoresearch loop that patches
+cua-driver in parallel Fleet sandboxes to hill-climb the score.
+
+Design: `docs/plans/2026-08-29-fps-cua-driver-bench-design.md`.
+
+## Setup
+
+```bash
+uv sync                                   # cua-bench 0.2.11, cua-sandbox (wheels.cua.ai), anthropic
+.venv/bin/python scripts/game_check.py    # headless smoke test of the game (no desktop needed)
+```
+
+Fleet credentials come from the macOS Keychain entry `cua-sandbox-fleet-api`
+(same one pi-cua uses) or `CUA_CLIENT_ID` / `CUA_CLIENT_SECRET`.
+
+## Task
+
+`tasks/fps_lshape/` — `main.py` + `gui/index.html`. Keys: `W/S` step, `A/D` strafe,
+`←/→` turn 15°. `evaluate()` → `[reached, progress]`.
+
+```bash
+.venv/bin/cb interact tasks/fps_lshape --oracle --no-wait      # oracle solves it via window.__press
+.venv/bin/cb run task tasks/fps_lshape --wait --agent-import-path fps_bench.agent:CuaDriverAgent
+```
+
+Local runs use docker image `public.ecr.aws/k5j5w0x5/cua-ubuntu-24.04:docker-latest`
+(the cua-sandbox local-docker default on trycua/cua main) — but that image lacks
+`bench_ui`, which `launch_window()` needs, so for local runs build the arm64 variant
+of our image and point at it:
+
+```bash
+PLATFORM=linux/arm64 PUSH=0 image/build.sh          # -> fps-bench-cua-driver:local
+FPS_BENCH_IMAGE=fps-bench-cua-driver:local .venv/bin/python -m fps_bench.runner --local --episodes 3
+```
+
+## Agent
+
+`fps_bench/agent.py` — `CuaDriverAgent`. Reads `window.__state` (privileged
+perception), sends every key with `cua-driver call press_key` executed inside the
+environment, re-plans after each press. Per-episode record includes presses sent vs
+keydowns the page saw (`delivery_ratio`).
+
+## Fleet image
+
+`image/Dockerfile`: `FROM …cua-ubuntu-24.04:docker-latest` + bench_ui/pywebview +
+Rust 1.97.1 + sparse clone of `trycua/cua` (`libs/cua-driver`) at `CUA_REF`, crates
+pre-fetched. `cua-driver` is compiled natively at container boot by supervisord
+(`image/prebuild.sh`) and installed to `/usr/local/bin/cua-driver`.
+
+```bash
+image/build.sh        # buildx linux/amd64 → 296062593712.dkr.ecr.us-west-2.amazonaws.com/cua-gymdriver-dev:cua-driver-bench-<date>-<ref>
+```
+
+Fleet's pool admission only allows a fixed set of image repositories, which is why
+the tag lands in `cua-gymdriver-dev`. Pools use `runtime = gvisor` (plain container).
+
+## Autoresearch
+
+```bash
+.venv/bin/python scripts/fleet_smoke.py --image <image> --pool fps-bench-smoke --bench   # 1 sandbox, 1 episode
+FPS_BENCH_FLEET_IMAGE=<image> .venv/bin/python -m fps_bench.autoresearch --workers 3 --iterations 5 --episodes 3
+```
+
+Each worker: Claude (`claude-opus-5`) proposes a diff → claim sandbox → `git apply` +
+`cargo build --release -p cua-driver` → benchmark → append to
+`results/experiments.jsonl` → release claim. Best patch is kept in `results/best.diff`.

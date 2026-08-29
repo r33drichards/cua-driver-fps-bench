@@ -1,0 +1,152 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>L-Platform</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0e14; font-family: monospace; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 8px; top: 8px; color: #e6edf3; background: rgba(0,0,0,.55);
+         padding: 6px 8px; font-size: 12px; line-height: 1.4; border-radius: 4px; white-space: pre; }
+  #banner { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+            color: #fff; font-size: 40px; font-weight: bold; text-shadow: 0 2px 8px #000; pointer-events: none; }
+</style>
+<script>__THREE__</script>
+</head>
+<body>
+<div id="hud" role="status" aria-live="polite"></div>
+<div id="banner"></div>
+<script>
+// ---------------------------------------------------------------------------
+// World: an L-shaped platform. Player starts at the far end of the SHORT leg,
+// facing +Z toward the corner. The goal is at the far end of the LONG leg,
+// which runs along +X from the corner.
+//
+//        z
+//        ^
+//  start |###|
+//        |###|  short leg (LEG_W x SHORT_LEN)
+//        |###|
+// corner |#########################|  long leg (LONG_LEN x LEG_W)  goal
+//        +---------------------------> x
+// ---------------------------------------------------------------------------
+const LEG_W = 3, SHORT_LEN = 8, LONG_LEN = 16, Y_TOP = 0;
+const START = { x: LEG_W / 2, z: SHORT_LEN - 1.0 };          // near top of short leg
+const GOAL  = { x: LONG_LEN - 1.0, z: -LEG_W / 2 };          // far end of long leg
+const GOAL_R = 0.9;
+const STEP = 1.0;            // world units per key tap
+const TURN = 15;             // degrees per turn key tap
+const EYE = 1.6;
+
+const state = {
+  x: START.x, z: START.z, heading: 180,   // heading in degrees; 180 => facing -Z (toward corner)
+  reached: false, fell: false, falls: 0,
+  moves: 0, turns: 0, keydowns: 0, keys: {},
+  started_at: Date.now(), reached_at: null,
+};
+window.__state = state;
+
+// short leg: x in [0, LEG_W], z in [-LEG_W, SHORT_LEN]; long leg: x in [0, LONG_LEN], z in [-LEG_W, 0]
+function onPlatform(x, z) {
+  const inShort = x >= 0 && x <= LEG_W && z >= -LEG_W && z <= SHORT_LEN;
+  const inLong  = x >= 0 && x <= LONG_LEN && z >= -LEG_W && z <= 0;
+  return inShort || inLong;
+}
+// Progress 0..1 along the intended route: down the short leg, then along the long leg.
+function progress(x, z) {
+  const legA = Math.max(0, Math.min(1, (START.z - z) / (START.z - GOAL.z)));
+  const legB = Math.max(0, Math.min(1, (x - START.x) / (GOAL.x - START.x)));
+  const total = (START.z - GOAL.z) + (GOAL.x - START.x);
+  return ((START.z - GOAL.z) * legA + (GOAL.x - START.x) * legB) / total;
+}
+window.__progress = () => progress(state.x, state.z);
+
+// ---------------------------------------------------------------------------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0e14);
+scene.fog = new THREE.Fog(0x0b0e14, 18, 40);
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 100);
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x202030, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 0.8); sun.position.set(5, 10, 3); scene.add(sun);
+
+function slab(w, d, cx, cz, color) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.5, d), new THREE.MeshStandardMaterial({ color }));
+  m.position.set(cx, Y_TOP - 0.25, cz); scene.add(m);
+  const g = new THREE.GridHelper(Math.max(w, d), Math.max(w, d), 0x3a4a6a, 0x2a3650);
+  g.position.set(cx, Y_TOP + 0.01, cz); g.scale.set(w / Math.max(w, d), 1, d / Math.max(w, d)); scene.add(g);
+}
+slab(LEG_W, SHORT_LEN + LEG_W, LEG_W / 2, (SHORT_LEN - LEG_W) / 2, 0x4b5f8a);   // short leg incl. corner
+slab(LONG_LEN - LEG_W, LEG_W, LEG_W + (LONG_LEN - LEG_W) / 2, -LEG_W / 2, 0x5a6f9a); // long leg beyond corner
+
+const goal = new THREE.Mesh(new THREE.CylinderGeometry(GOAL_R, GOAL_R, 0.2, 24),
+  new THREE.MeshStandardMaterial({ color: 0x33ff88, emissive: 0x11aa44 }));
+goal.position.set(GOAL.x, Y_TOP + 0.1, GOAL.z); scene.add(goal);
+const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 6, 8),
+  new THREE.MeshBasicMaterial({ color: 0x66ffaa, transparent: true, opacity: 0.5 }));
+beacon.position.set(GOAL.x, Y_TOP + 3, GOAL.z); scene.add(beacon);
+
+// ---------------------------------------------------------------------------
+const hud = document.getElementById('hud');
+const banner = document.getElementById('banner');
+function fwd() { const r = state.heading * Math.PI / 180; return { x: Math.sin(r), z: Math.cos(r) }; }
+function move(dxFwd, dxRight) {
+  if (state.reached) return;
+  const f = fwd(); const rgt = { x: f.z, z: -f.x };
+  const nx = state.x + (f.x * dxFwd + rgt.x * dxRight) * STEP;
+  const nz = state.z + (f.z * dxFwd + rgt.z * dxRight) * STEP;
+  state.moves++;
+  if (!onPlatform(nx, nz)) {
+    state.fell = true; state.falls++;
+    state.x = START.x; state.z = START.z; state.heading = 180;
+    flash('FELL! reset', '#ff6666');
+    return;
+  }
+  state.x = nx; state.z = nz;
+  if (Math.hypot(state.x - GOAL.x, state.z - GOAL.z) <= GOAL_R + 0.3) {
+    state.reached = true; state.reached_at = Date.now();
+    flash('GOAL!', '#66ff99');
+  }
+}
+function turn(deg) { if (state.reached) return; state.heading = ((state.heading + deg) % 360 + 360) % 360; state.turns++; }
+let flashT = null;
+function flash(text, color) {
+  banner.textContent = text; banner.style.color = color; banner.style.display = 'flex';
+  clearTimeout(flashT); if (!state.reached) flashT = setTimeout(() => banner.style.display = 'none', 900);
+}
+
+const KEYS = {
+  w: () => move(1, 0), s: () => move(-1, 0), a: () => move(0, -1), d: () => move(0, 1),
+  ArrowUp: () => move(1, 0), ArrowDown: () => move(-1, 0),
+  ArrowLeft: () => turn(-TURN), ArrowRight: () => turn(TURN), q: () => turn(-TURN), e: () => turn(TURN),
+};
+addEventListener('keydown', ev => {
+  const k = ev.key.length === 1 ? ev.key.toLowerCase() : ev.key;
+  state.keydowns++; state.keys[k] = (state.keys[k] || 0) + 1;
+  if (KEYS[k]) { KEYS[k](); ev.preventDefault(); }
+});
+// Programmatic hook so an oracle/solver can drive the same code path as real input.
+window.__press = (k) => { if (KEYS[k]) KEYS[k](); };
+window.__reset = () => { Object.assign(state, { x: START.x, z: START.z, heading: 180, reached: false, fell: false,
+  falls: 0, moves: 0, turns: 0, keydowns: 0, keys: {}, started_at: Date.now(), reached_at: null }); banner.style.display = 'none'; };
+
+function render() {
+  const f = fwd();
+  camera.position.set(state.x, Y_TOP + EYE, state.z);
+  camera.lookAt(state.x + f.x, Y_TOP + EYE, state.z + f.z);
+  beacon.rotation.y += 0.02;
+  hud.textContent = `x=${state.x.toFixed(2)} z=${state.z.toFixed(2)} heading=${state.heading}\n` +
+    `progress=${(progress(state.x, state.z) * 100).toFixed(0)}% reached=${state.reached} falls=${state.falls}\n` +
+    `keydowns=${state.keydowns}  W/S move  A/D strafe  ←/→ turn`;
+  renderer.render(scene, camera);
+  requestAnimationFrame(render);
+}
+render();
+window.focus();
+</script>
+</body>
+</html>
