@@ -3,3 +3,5 @@ __pycache__/
 results/*.jsonl
 results/runs/
 uv.lock
+.auto/runs/
+cua-driver/rust/target/

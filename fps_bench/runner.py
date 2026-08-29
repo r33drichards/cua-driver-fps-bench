@@ -70,11 +70,30 @@ class FleetSession:
         await self.run_command(f"kill {int(pid)} || true", check=False)
 
 
+PREBUILD_STAMP = "/opt/fps-bench/prebuild.done"
+
+
+async def wait_prebuild(session: Any, *, timeout: float = 1500, poll: float = 10) -> str:
+    """Wait for the image's boot-time cua-driver build (no-op on images without it)."""
+    probe = await session.run_command("test -x /opt/fps-bench/prebuild.sh && echo HAS || echo NO", check=False)
+    if "HAS" not in (probe.get("stdout") or ""):
+        return "no prebuild in image"
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout:
+        r = await session.run_command(f"test -f {PREBUILD_STAMP} && echo DONE || echo WAIT", check=False)
+        if "DONE" in (r.get("stdout") or ""):
+            log = await session.run_command("tail -n 3 /opt/fps-bench/prebuild.log", check=False)
+            return log.get("stdout") or ""
+        await asyncio.sleep(poll)
+    raise TimeoutError("cua-driver prebuild did not finish in time")
+
+
 async def run_benchmark(
     session: Any, *, episodes: int, agent_kwargs: dict[str, Any] | None = None, label: str = ""
 ) -> dict[str, Any]:
     """Launch the game once, then run ``episodes`` agent episodes (reset between)."""
     agent = CuaDriverAgent(**(agent_kwargs or {}))
+    print(f"[{label}] prebuild: {(await wait_prebuild(session)).strip()[-200:]}", flush=True)
     pid = await session.launch_window(
         html=task_module.game_html(),
         title=task_module.WINDOW_TITLE,

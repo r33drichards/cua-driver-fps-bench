@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Idempotent guest setup for a pi-cua Linux sandbox (Ubuntu 24.04 VM, user `cua`):
+# X11 desktop deps for bench_ui/pywebview, Rust deps for cua-driver, python deps.
+# Safe to run on every measure.sh invocation (fast when already done).
+set -euo pipefail
+STAMP="$HOME/.cache/fps-bench/bootstrap.v1"
+[ -f "$STAMP" ] && exit 0
+if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO=sudo; fi
+
+export DEBIAN_FRONTEND=noninteractive
+$SUDO apt-get update -qq
+$SUDO apt-get install -y -qq --no-install-recommends \
+  build-essential pkg-config git ca-certificates curl \
+  libx11-dev libxi-dev libxtst-dev libxext-dev libwayland-dev libxkbcommon-dev \
+  python3-gi gir1.2-webkit2-4.1 gir1.2-gtk-3.0 python3-pip python3-psutil xdotool >/dev/null
+
+python3 -m pip install --break-system-packages --quiet cua-bench-ui pywebview
+
+# rustup exists from pi-cua bootstrap (1.88); cua-driver pins its toolchain via rust-toolchain.toml.
+if ! command -v cargo >/dev/null 2>&1; then
+  curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path
+fi
+mkdir -p "$(dirname "$STAMP")" && touch "$STAMP"
+echo "bootstrap done"
