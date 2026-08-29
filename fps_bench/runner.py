@@ -151,12 +151,13 @@ async def api_url_session(api_url: str) -> Any:
     return session
 
 
-async def ensure_guest_bootstrap(session: Any, *, timeout: float = 1500) -> str:
+async def ensure_guest_bootstrap(session: Any, *, timeout: float = 1500, force: bool = False) -> str:
     """Run bench/bootstrap_guest.sh on the env (detached via systemd-run) and wait for it."""
     script = (Path(__file__).resolve().parents[1] / "bench" / "bootstrap_guest.sh").read_text()
-    probe = await session.run_command("python3 -c 'import bench_ui' >/dev/null 2>&1 && echo HAS || echo NO", check=False)
-    if "HAS" in (probe.get("stdout") or ""):
+    probe = await session.run_command("python3 -c 'import bench_ui, cua_bench' >/dev/null 2>&1 && echo HAS || echo NO", check=False)
+    if not force and "HAS" in (probe.get("stdout") or ""):
         return "bench_ui present"
+    await session.run_command("rm -f /root/.cache/fps-bench/bootstrap.v1 /home/cua/.cache/fps-bench/bootstrap.v1", check=False)
     await session.write_file("/tmp/fps-bootstrap.sh", script)
     launch = ("if [ \"$(id -u)\" -eq 0 ]; then S=; else S=sudo; fi; $S rm -f /tmp/fps-bootstrap.rc; "
               "$S systemd-run --collect --unit=fps-bootstrap sh -c 'bash /tmp/fps-bootstrap.sh >/tmp/fps-bootstrap.log 2>&1; echo $? >/tmp/fps-bootstrap.rc'")

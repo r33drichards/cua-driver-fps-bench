@@ -9,6 +9,13 @@ STAMP="$HOME/.cache/fps-bench/bootstrap.v1"
 [ -f "$STAMP" ] && exit 0
 if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO=sudo; fi
 
+# When run as root (e.g. through computer-server before a pi session starts), let the
+# `cua` user sudo without a password: measure.sh needs it for the tmpfs mount and
+# pi-cua sandboxes may ship with cua's password locked and no sudoers entry.
+if [ "$(id -u)" -eq 0 ] && id cua >/dev/null 2>&1; then
+  echo "cua ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-cua-fps-bench && chmod 0440 /etc/sudoers.d/90-cua-fps-bench
+fi
+
 export DEBIAN_FRONTEND=noninteractive
 $SUDO apt-get update -qq
 $SUDO apt-get install -y -qq --no-install-recommends \
