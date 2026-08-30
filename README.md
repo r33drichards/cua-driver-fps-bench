@@ -1,4 +1,4 @@
-# Currently maintained at [cua-driver-fps-bench](https://github.com/trycua/cua-driver-fps-bench)
+# ARCHIVED! Currently maintained at [cua-driver-fps-bench](https://github.com/trycua/cua-driver-fps-bench)
 <pre>
   # fps-bench — first-person movement benchmark for cua-driver
 
