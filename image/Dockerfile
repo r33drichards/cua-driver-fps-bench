@@ -41,7 +41,13 @@ RUN git clone --filter=blob:none --sparse https://github.com/trycua/cua.git /opt
 
 COPY prebuild.sh /opt/fps-bench/prebuild.sh
 COPY supervisor-prebuild.conf /etc/supervisor/conf.d/zz-cua-driver-prebuild.conf
-RUN chmod +x /opt/fps-bench/prebuild.sh
+# The base image's supervisord.conf has NO [include] section, so conf.d/ is never
+# read (verified 2026-08-30: the prebuild program never spawned). Register the
+# program in supervisord.conf itself, and add a control socket so
+# `supervisorctl restart cua-driver-mcp` in prebuild.sh works after the build.
+RUN chmod +x /opt/fps-bench/prebuild.sh \
+    && printf '\n[unix_http_server]\nfile=/run/supervisor.sock\nchmod=0700\n\n[rpcinterface:supervisor]\nsupervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface\n\n[supervisorctl]\nserverurl=unix:///run/supervisor.sock\n\n[include]\nfiles = /etc/supervisor/conf.d/*.conf\n' >> /etc/supervisor/supervisord.conf \
+    && python3 -c "import configparser,sys; c=configparser.RawConfigParser(); c.read('/etc/supervisor/supervisord.conf'); c.read('/etc/supervisor/conf.d/zz-cua-driver-prebuild.conf'); assert 'program:cua-driver-prebuild' in c.sections() and 'include' in c.sections(); print('supervisor config ok')"
 
 LABEL org.opencontainers.image.source="https://github.com/trycua/cua" \
       ai.cua.fps-bench.cua-ref="${CUA_REF}"
