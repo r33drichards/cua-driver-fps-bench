@@ -24,7 +24,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential pkg-config git ca-certificates curl \
         libx11-dev libxi-dev libxtst-dev libxext-dev libwayland-dev libxkbcommon-dev \
-        python3-gi gir1.2-webkit2-4.1 gir1.2-gtk-3.0 python3-pip \
+        python3-gi gir1.2-webkit2-4.1 gir1.2-gtk-3.0 python3-pip xdotool \
     && rm -rf /var/lib/apt/lists/*
 
 # bench_ui is what cua-bench's launch_window() imports via the system python.

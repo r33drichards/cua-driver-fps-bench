@@ -37,6 +37,10 @@ async def main(a) -> int:
 
     sb = await Sandbox.from_dict(json.loads(Path(a.ref).read_text()))
     try:
+        for spec in a.put:
+            local, remote = spec.split(":", 1)
+            await sb.files.write_text(remote, Path(local).read_text())
+            print("put", local, "->", remote)
         if a.bg:
             # The guest command server refuses backgrounded children ('&', nohup, setsid);
             # the SDK's pty path is the sanctioned way to start a long job.
@@ -65,5 +69,6 @@ if __name__ == "__main__":
     p.add_argument("--interval", type=float, default=60)
     p.add_argument("--sh", default="", help="run a single command instead of the checks")
     p.add_argument("--bg", default="", help="start a long-running command via the pty path and return")
+    p.add_argument("--put", action="append", default=[], help="upload local:remote (text) before running")
     p.add_argument("--timeout", type=int, default=25)
     raise SystemExit(asyncio.run(main(p.parse_args())))

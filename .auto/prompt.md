@@ -61,6 +61,16 @@ this WebKitGTK build (delivery_ratio 1.0 on main), so the open problem here is
 `move_cursor` → real pointer motion (`mouse_ratio`); apply the same "when the target
 owns focus, use XTest" idea to pointer motion.
 
+## gVisor (Fleet container) baseline, 2026-08-30 — image cua-driver-bench-20260830b
+Same game, cua-driver main (0.22.2) built at boot, `serve` daemon up, 0 driver errors:
+score 0.0, 0/90 keys. Probe on the sandbox: `press_key {pid}` (default background)
+is refused with `background_unavailable` ("target has no focus-free input backend")
+BEFORE the WebKitGTK auto-escalation runs; `delivery_mode: foreground` delivers;
+`move_cursor` moves only the overlay. The Exp 2 gating patch
+(`results/pi-sessions/fps-a-640fe99c-exp2-3.patch`) and `peer-best-xtest-when-focused`
+target exactly this refusal. WebKitWebProcess/WebKitNetworkProcess ARE visible under
+/proc there, so detection is not the problem; the refusal ordering is.
+
 ## What's Been Tried
 - 2026-08-29 baseline (stock cua-driver 0.4.2 on a Fleet Ubuntu 24.04 VM, XFCE on
   Xtigervnc :1, pywebview/WebKitGTK window): score 0.00, delivery_ratio 0.00 over
