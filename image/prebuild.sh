@@ -13,8 +13,10 @@ rm -f "$STAMP"
   cargo build --release -p cua-driver
   install -m 0755 target/release/cua-driver /usr/local/bin/cua-driver
   /usr/local/bin/cua-driver --version
-  # The MCP gateway program wraps the binary we just replaced.
+  # The MCP gateway and the serve daemon wrap the binary we just replaced.
   supervisorctl restart cua-driver-mcp || true
+  supervisorctl restart cua-driver-serve || true
+  sleep 2; /usr/local/bin/cua-driver status || true
   echo "prebuild done $(date -Is)"
 } >"$LOG" 2>&1
 touch "$STAMP"
