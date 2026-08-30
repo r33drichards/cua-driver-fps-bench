@@ -1,4 +1,6 @@
-# fps-bench — first-person movement benchmark for cua-driver
+# Currently maintained at [cua-driver-fps-bench](https://github.com/trycua/cua-driver-fps-bench)
+<pre>
+  # fps-bench — first-person movement benchmark for cua-driver
 
 A benchmark that measures how reliably cua-driver delivers mouse and keyboard
 input to a three.js first-person game (mouse look, WASD, Space) on a Linux
@@ -106,3 +108,5 @@ FPS_BENCH_FLEET_IMAGE=<image> .venv/bin/python -m fps_bench.autoresearch --worke
 Each worker: Claude (`claude-opus-5`) proposes a diff → claim sandbox → `git apply` +
 `cargo build --release -p cua-driver` → benchmark → append to
 `results/experiments.jsonl` → release claim. Best patch is kept in `results/best.diff`.
+
+</pre>
