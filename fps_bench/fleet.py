@@ -69,9 +69,10 @@ async def ensure_pool(
     start; fixed by trycua/cloud#7268) and pod-runtime sandboxes got no per-service
     k8s Services, so the gateway's ``/api/svc`` 502'd (fixed by #7269). Both are
     merged and rolled out; e2e: pods stay Ready for hours, claims bind in ~3 min,
-    ``shell.run`` works. Open caveat: the bench image's boot-time ``cargo build`` did
-    not finish within ``wait_prebuild``'s 30 min under gVisor in that e2e — claim with
-    ``--keep`` and read ``/opt/fps-bench/prebuild.log`` before relying on it.
+    ``shell.run`` works. The "prebuild timeout" seen on 2026-08-29 was the image's
+    fault, not gVisor's: the base image's supervisord.conf has no ``[include]``, so the
+    conf.d program never ran. Fixed in image tag ``cua-driver-bench-20260830-*``; the
+    full release build + install takes ~60 s on a gVisor sandbox (16 vCPU).
     """
     from cua_sandbox.pool import Pool, Template
     from fleet_sdk import (

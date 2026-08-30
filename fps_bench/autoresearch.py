@@ -217,9 +217,10 @@ async def amain(args: argparse.Namespace) -> int:
     if args.runtime == "gvisor":
         # gVisor container pools work since trycua/cloud#7268 (pod resources) and #7269
         # (per-service Services) rolled out on 2026-08-29: pods stay up, claims bind in
-        # ~3 min, shell.run works. Remaining caveat: in the one e2e the image's boot-time
-        # `cargo build` exceeded fleet.wait_prebuild's 30 min under gVisor (undiagnosed;
-        # claim with --keep and read /opt/fps-bench/prebuild.log), so `vm` stays the default.
+        # ~3 min, shell.run works, and the boot-time build takes ~60 s with image tag
+        # cua-driver-bench-20260830-* (earlier tags never started it: the base image's
+        # supervisord.conf lacks [include]). `vm` stays the default only because it
+        # needs no custom image; use --runtime gvisor with the bench image for speed.
         pool = await fleet.ensure_pool(args.image, name=args.pool, initial_size=args.workers, max_size=max(args.workers, 2))
     else:
         pool = await fleet.ensure_vm_pool(args.image or fleet.VM_IMAGE, name=args.pool, initial_size=args.workers, max_size=max(args.workers, 2))
@@ -248,7 +249,7 @@ async def amain(args: argparse.Namespace) -> int:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--runtime", choices=["vm", "gvisor"], default="vm",
-                   help="vm: KubeVirt VM pool + in-guest bootstrap (default); gvisor: container-image pool (works since cloud#7268/#7269; boot-time build may exceed the prebuild timeout)")
+                   help="vm: KubeVirt VM pool + in-guest bootstrap (default, no custom image); gvisor: container-image pool with the bench image (boot-time build ~60 s; needs tag cua-driver-bench-20260830 or later)")
     p.add_argument("--image", default=os.environ.get("FPS_BENCH_FLEET_IMAGE"),
                    help="container image (gvisor) or containerDisk (vm; default fleet.VM_IMAGE)")
     p.add_argument("--pool", default=fleet.DEFAULT_POOL)
