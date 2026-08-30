@@ -215,9 +215,11 @@ async def amain(args: argparse.Namespace) -> int:
         text=True,
     ).strip()
     if args.runtime == "gvisor":
-        # Blocked today: Fleet's pool operator creates gVisor pods without resource
-        # requests, and BestEffort runsc sandboxes get recycled ~80 s after start
-        # (see fleet.ensure_pool docstring). Kept for when the operator is fixed.
+        # gVisor container pools work since trycua/cloud#7268 (pod resources) and #7269
+        # (per-service Services) rolled out on 2026-08-29: pods stay up, claims bind in
+        # ~3 min, shell.run works. Remaining caveat: in the one e2e the image's boot-time
+        # `cargo build` exceeded fleet.wait_prebuild's 30 min under gVisor (undiagnosed;
+        # claim with --keep and read /opt/fps-bench/prebuild.log), so `vm` stays the default.
         pool = await fleet.ensure_pool(args.image, name=args.pool, initial_size=args.workers, max_size=max(args.workers, 2))
     else:
         pool = await fleet.ensure_vm_pool(args.image or fleet.VM_IMAGE, name=args.pool, initial_size=args.workers, max_size=max(args.workers, 2))
@@ -246,7 +248,7 @@ async def amain(args: argparse.Namespace) -> int:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--runtime", choices=["vm", "gvisor"], default="vm",
-                   help="vm: KubeVirt VM pool + in-guest bootstrap (works); gvisor: container image pool (blocked by operator bug)")
+                   help="vm: KubeVirt VM pool + in-guest bootstrap (default); gvisor: container-image pool (works since cloud#7268/#7269; boot-time build may exceed the prebuild timeout)")
     p.add_argument("--image", default=os.environ.get("FPS_BENCH_FLEET_IMAGE"),
                    help="container image (gvisor) or containerDisk (vm; default fleet.VM_IMAGE)")
     p.add_argument("--pool", default=fleet.DEFAULT_POOL)

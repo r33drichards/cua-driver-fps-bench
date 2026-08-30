@@ -64,13 +64,14 @@ async def ensure_pool(
 ) -> Any:
     """Reconcile a gVisor-runtime pool (and its template) for ``image``; returns cua_sandbox.Pool.
 
-    BLOCKED as of 2026-08-29: the osgym pool-operator's pod backend
-    (cloud/osgym/pool-operator/pod_backend.py) renders gVisor pods with no
-    ``resources``, so they land in BestEffort QoS and the host runsc sandbox is
-    recycled (SIGTERM to pid 1) every ~60-90 s — the container CrashLoopBackOffs
-    and the OSGymSandbox never reports Ready. cpuCores/memory in the template
-    are ignored for pod runtimes and tenants cannot add a LimitRange through the
-    gateway. Use ensure_vm_pool() until the operator sets container resources.
+    History (2026-08-29): this path was broken twice in the osgym pool-operator —
+    gVisor pods had no ``resources`` (BestEffort → runsc sandbox recycled ~80 s after
+    start; fixed by trycua/cloud#7268) and pod-runtime sandboxes got no per-service
+    k8s Services, so the gateway's ``/api/svc`` 502'd (fixed by #7269). Both are
+    merged and rolled out; e2e: pods stay Ready for hours, claims bind in ~3 min,
+    ``shell.run`` works. Open caveat: the bench image's boot-time ``cargo build`` did
+    not finish within ``wait_prebuild``'s 30 min under gVisor in that e2e — claim with
+    ``--keep`` and read ``/opt/fps-bench/prebuild.log`` before relying on it.
     """
     from cua_sandbox.pool import Pool, Template
     from fleet_sdk import (
