@@ -53,5 +53,20 @@ for _ in $(seq 1 100); do
 done
 
 mkdir -p .auto/runs
+STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+# RECORD=1: screen-capture the desktop for the duration of the benchmark
+# (.auto/runs/<stamp>${RECORD_TAG:+-$RECORD_TAG}.mp4). Needs ffmpeg on the guest.
+if [ "${RECORD:-0}" = "1" ]; then
+  GEOM=$(xdotool getdisplaygeometry 2>/dev/null | tr ' ' 'x'); GEOM=${GEOM:-1024x768}
+  VIDEO=".auto/runs/${STAMP}${RECORD_TAG:+-$RECORD_TAG}.mp4"
+  ffmpeg -loglevel error -y -f x11grab -video_size "$GEOM" -framerate 15 -i "$DISPLAY" \
+    -c:v libx264 -preset veryfast -pix_fmt yuv420p "$VIDEO" >/dev/null 2>&1 &
+  FFMPEG_PID=$!
+  trap 'cleanup; kill -INT "$FFMPEG_PID" 2>/dev/null; wait "$FFMPEG_PID" 2>/dev/null || true' EXIT
+fi
 python3 bench/run_in_sandbox.py --episodes "${EPISODES:-3}" --driver "$DRIVER" \
-  --json ".auto/runs/$(date -u +%Y%m%dT%H%M%SZ).json"
+  --json ".auto/runs/${STAMP}.json"
+if [ -n "${FFMPEG_PID:-}" ]; then
+  kill -INT "$FFMPEG_PID" 2>/dev/null; wait "$FFMPEG_PID" 2>/dev/null || true
+  echo "VIDEO $VIDEO"
+fi
